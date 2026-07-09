@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — OceanicOS CLI</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:34px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  #term{margin-top:14px;background:#061a26;border:1px solid #12455f;border-radius:6px;padding:12px 14px}
+  #out{white-space:pre-wrap;font-size:13px;min-height:150px;max-height:320px;overflow:auto}
+  #out .cmd{color:#e8f6fb} #out .ok{color:#8fb3c4} #out .err{color:#fb7185} #out .prompt{color:#34d399}
+  #inp{display:flex;margin-top:8px}
+  #inp span{color:#34d399;margin-right:8px}
+  #line{flex:1;background:#04141f;border:1px solid #12455f;color:#e8f6fb;font-family:inherit;font-size:13px;padding:6px 8px}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>CLI</b> (build 0012, Stage 2 · Builder). One text interface to the assembled system; a pure interpreter whose <code>exec()</code> never throws. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — a real console driving OceanicOS</h2>
+<div id="term">
+  <div id="out"></div>
+  <div id="inp"><span>oceanic&gt;</span><input id="line" autocomplete="off" spellcheck="false" placeholder="type: help  ·  status  ·  observe the tide is rising" /></div>
+</div>
+<div class="note">This console is live — the seeded transcript below really ran through the CLI on load. Try <code>help</code>, then <code>observe ...</code>, <code>verify &lt;id&gt;</code>, <code>status</code>.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="cli.js"></script>
+<script>
+"use strict";
+var fakeTime = 1000;
+var clock = function(){ return (fakeTime += 10); };
+function newCLI(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "cli-test" });
+  return OceanicCore.createCLI({ oceanic: os });
+}
+
+var suite = OceanicCore.createVerifier({ name: "OceanicOS CLI (build 0012)" });
+
+suite.test("createCLI requires an assembled OceanicOS", function(a){
+  a.equal(typeof OceanicCore.createCLI, "function");
+  a.throws(function(){ OceanicCore.createCLI(); });
+  a.throws(function(){ OceanicCore.createCLI({ oceanic: {} }); });
+  var cli = newCLI();
+  a.equal(typeof cli.exec, "function");
+  a.ok(cli.commands.indexOf("observe") >= 0 && cli.commands.indexOf("start") >= 0, "publishes its command list");
+});
+
+suite.test("exec() NEVER throws — empty and unknown commands return { ok:false, error }", function(a){
+  var cli = newCLI();
+  var e1 = cli.exec("");
+  a.equal(e1.ok, false); a.equal(e1.error, "empty command");
+  var e2 = cli.exec("   ");
+  a.equal(e2.ok, false, "whitespace-only is empty too");
+  var e3 = cli.exec("frobnicate stuff");
+  a.equal(e3.ok, false); a.ok(e3.error.indexOf("unknown command") >= 0);
+  a.equal(e3.command, "frobnicate");
+});
+
+suite.test("start boots the system through the CLI", function(a){
+  var cli = newCLI();
+  var r = cli.exec("start");
+  a.equal(r.ok, true);
+  a.equal(r.data.pulse, 1);
+  a.equal(cli.oceanic.status().booted, true);
+});
+
+suite.test("commands are case-insensitive on the verb", function(a){
+  var cli = newCLI();
+  a.equal(cli.exec("STATUS").ok, true);
+  a.equal(cli.exec("Observe the tide").ok, true, "verb case ignored, text preserved");
+});
+
+suite.test("observe records an observation and returns its id; text is preserved verbatim", function(a){
+  var cli = newCLI();
+  var r = cli.exec("observe the north channel shoals at low water");
+  a.equal(r.ok, true);
+  a.equal(r.data.body, "the north channel shoals at low water");
+  a.equal(r.data.meta.status, "pending");
+  a.equal(cli.exec("observe").ok, false, "observe with no text is refused");
+});
+
+suite.test("verify / reject / archive change an observation's status; notes are captured", function(a){
+  var cli = newCLI();
+  var oid = cli.exec("observe a swell").data.meta.oid;
+  var v = cli.exec("verify " + oid + " buoy agrees");
+  a.equal(v.ok, true);
+  a.equal(v.data.meta.status, "verified");
+  a.equal(v.data.meta.note, "buoy agrees", "the rest of the line is the note");
+  a.equal(cli.exec("archive " + oid).data.meta.status, "archived");
+  a.equal(cli.exec("verify o-nope").ok, false, "an engine refusal is reported, not thrown");
+});
+
+suite.test("observations lists, and filters by status", function(a){
+  var cli = newCLI();
+  var o1 = cli.exec("observe first").data.meta.oid;
+  cli.exec("observe second");
+  cli.exec("verify " + o1);
+  a.equal(cli.exec("observations").data.length, 2, "all current");
+  a.equal(cli.exec("observations verified").data.length, 1, "filtered");
+  a.equal(cli.exec("observations pending").data.length, 1);
+  a.equal(cli.exec("observations nonsense").ok, false, "bad status reported");
+});
+
+suite.test("propose parses a question and |-separated options; decide commits a multi-word choice", function(a){
+  var cli = newCLI();
+  var oid = cli.exec("observe reef here").data.meta.oid;
+  cli.exec("verify " + oid);
+  var d = cli.exec("propose which route? | north channel | long way round");
+  a.equal(d.ok, true);
+  a.deepEqual(d.data.meta.options, ["north channel", "long way round"]);
+  a.equal(cli.exec("propose too few").ok, false, "need question + 2 options");
+  var did = d.data.meta.did;
+  var dec = cli.exec("decide " + did + " long way round | safety over speed");
+  a.equal(dec.ok, true);
+  a.equal(dec.data.meta.choice, "long way round", "multi-word choice parsed");
+  a.equal(dec.data.meta.note, "safety over speed", "note after | captured");
+});
+
+suite.test("verification before acceptance is enforced through the CLI", function(a){
+  var cli = newCLI();
+  var oid = cli.exec("observe unconfirmed").data.meta.oid; // pending
+  var did = cli.exec("propose act? | yes | no").data.meta.did;
+  // decision grounds set via the API path isn't available in CLI; instead prove the engine refuses via a grounded decision:
+  // build a grounded decision directly to exercise the guard end-to-end
+  var d2 = cli.oceanic.decisions.propose({ question:"q", options:["a","b"], grounds:[oid] });
+  var r = cli.exec("decide " + d2.meta.did + " a");
+  a.equal(r.ok, false); a.ok(r.error.indexOf("not verified") >= 0, "CLI reports the unverified-ground refusal");
+  cli.exec("verify " + oid);
+  a.equal(cli.exec("decide " + d2.meta.did + " a").ok, true, "permitted once verified");
+});
+
+suite.test("learn / knowledge and project / link / projects drive their engines", function(a){
+  var cli = newCLI();
+  var k = cli.exec("learn tides follow the moon");
+  a.equal(k.ok, true);
+  a.equal(cli.exec("knowledge").data.length, 1);
+  var pid = cli.exec("project Winter routing").data.meta.pid;
+  a.equal(cli.exec("link " + pid + " knowledge " + k.data.meta.kid).ok, true);
+  a.equal(cli.exec("link " + pid + " observation o-1").data.meta.links.length, 2, "second thread gathered");
+  a.equal(cli.exec("link " + pid + " wormhole x").ok, false, "bad link kind reported");
+  a.equal(cli.exec("projects").data.length, 1);
+  a.equal(cli.exec("projects active").data.length, 1);
+});
+
+suite.test("status and snapshot summarise the one ocean; help lists every command", function(a){
+  var cli = newCLI();
+  cli.exec("start");
+  cli.exec("observe x");
+  var s = cli.exec("status");
+  a.equal(s.ok, true); a.ok(s.message.indexOf("ocean 1 records") >= 0);
+  var snap = cli.exec("snapshot");
+  a.equal(snap.ok, true); a.ok(snap.data.bytes > 0);
+  a.equal(cli.exec("help").data.length, cli.commands.length, "help lists all commands");
+});
+
+suite.test("a full session leaves a coherent ocean, driven entirely from text", function(a){
+  var cli = newCLI();
+  cli.exec("start");
+  var oid = cli.exec("observe the harbor shoals at low water").data.meta.oid;
+  cli.exec("verify " + oid + " confirmed");
+  var did = cli.exec("propose route? | north | long way").data.meta.did;
+  cli.exec("decide " + did + " long way");
+  cli.exec("learn the harbor is unsafe below half tide");
+  var pid = cli.exec("project Winter routing").data.meta.pid;
+  cli.exec("link " + pid + " observation " + oid);
+  cli.exec("link " + pid + " decision " + did);
+  var st = cli.oceanic.status();
+  a.equal(st.reality.verified, 1);
+  a.equal(st.decisions.decided, 1);
+  a.equal(st.knowledge.established, 1);
+  a.equal(st.projects.active, 1);
+  a.equal(cli.oceanic.projects.links(pid).length, 2);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+suite.renderTo(document.getElementById("suite"));
+var record = suite.run();
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ OceanicOS CLI";
+
+/* ---- live interactive console ---- */
+(function(){
+  var liveTime = 5000;
+  var liveClock = function(){ return (liveTime += 7); };
+  var os = OceanicCore.createOceanic({ now: liveClock, manual: true, name: "harbor" });
+  var cli = OceanicCore.createCLI({ oceanic: os });
+  var out = document.getElementById("out");
+  var line = document.getElementById("line");
+  function write(html, cls){ var d = document.createElement("div"); if (cls) d.className = cls; d.innerHTML = html; out.appendChild(d); out.scrollTop = out.scrollHeight; }
+  function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  function submit(text){
+    write('<span class="prompt">oceanic&gt;</span> <span class="cmd">' + esc(text) + '</span>');
+    var r = cli.exec(text);
+    if (r.ok) { if (r.message) write(esc(r.message), "ok"); }
+    else write("! " + esc(r.error), "err");
+  }
+  // seed a real transcript so the page proves itself on load
+  ["help","start","observe the harbor shoals at low water"].forEach(submit);
+  var seededOid = os.reality.observations(false)[0].meta.oid;
+  ["verify " + seededOid + " second sounding agrees",
+   "learn the harbor is unsafe below half tide",
+   "project Winter routing",
+   "status"].forEach(submit);
+  line.addEventListener("keydown", function(e){
+    if (e.key === "Enter" && line.value.trim()){ submit(line.value.trim()); line.value = ""; }
+  });
+})();
+</script>
+</body>
+</html>
