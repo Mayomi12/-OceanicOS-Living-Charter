@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Desktop</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Desktop</b> (build 0025, Stage 3 · Applications). A windowed workspace — the window manager that composites the apps. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+<div class="note">The workspace itself is <a href="desktop.html" style="color:#38bdf8">desktop.html</a> — this page verifies its window-manager logic.</div>
+
+<script src="verify-engine.js"></script>
+<script src="desktop.js"></script>
+<script>
+"use strict";
+function ws(){ return OceanicCore.createWorkspace(); }
+var suite = OceanicCore.createVerifier({ name: "Desktop (build 0025)" });
+
+suite.test("factory publishes default panels and a full API", function(a){
+  a.equal(typeof OceanicCore.createWorkspace, "function");
+  a.ok(OceanicCore.createWorkspace.DEFAULT_PANELS.length >= 3);
+  var w = ws();
+  ["open","focus","close","toggle","isOpen","focused","order","list","reset","status"].forEach(function(fn){
+    a.equal(typeof w[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("a fresh workspace has nothing open and no focus", function(a){
+  var w = ws();
+  a.equal(w.focused(), null);
+  a.deepEqual(w.order(), []);
+  a.equal(w.status().open, 0);
+});
+
+suite.test("open() shows a panel and focuses it (brings it to the front)", function(a){
+  var w = ws();
+  w.open("harbor");
+  a.equal(w.isOpen("harbor"), true);
+  a.equal(w.focused(), "harbor");
+  w.open("terminal");
+  a.equal(w.focused(), "terminal", "the newly opened panel is frontmost");
+  a.deepEqual(w.order(), ["harbor","terminal"]);
+});
+
+suite.test("focus() raises an already-open panel to the top; z-order reflects it", function(a){
+  var w = ws();
+  w.open("harbor"); w.open("terminal"); w.open("docs");
+  a.deepEqual(w.order(), ["harbor","terminal","docs"]);
+  w.focus("harbor");
+  a.deepEqual(w.order(), ["terminal","docs","harbor"]);
+  a.equal(w.focused(), "harbor");
+  var byId = {}; w.list().forEach(function(p){ byId[p.id] = p.z; });
+  a.equal(byId.harbor, 3, "harbor is z=3 (top)");
+  a.equal(byId.terminal, 1, "terminal is z=1 (bottom)");
+});
+
+suite.test("close() hides a panel and focus falls to whatever is now on top", function(a){
+  var w = ws();
+  w.open("harbor"); w.open("terminal");
+  w.close("terminal");
+  a.equal(w.isOpen("terminal"), false);
+  a.equal(w.focused(), "harbor", "focus fell to the panel beneath");
+  w.close("harbor");
+  a.equal(w.focused(), null, "nothing open, no focus");
+});
+
+suite.test("toggle() opens a closed panel and closes an open one", function(a){
+  var w = ws();
+  a.equal(w.toggle("docs").focused, "docs", "opened");
+  a.equal(w.isOpen("docs"), true);
+  w.toggle("docs");
+  a.equal(w.isOpen("docs"), false, "closed");
+});
+
+suite.test("list() enriches each panel with open / focused / z", function(a){
+  var w = ws();
+  w.open("docs");
+  var docs = w.list().filter(function(p){ return p.id === "docs"; })[0];
+  a.equal(docs.open, true);
+  a.equal(docs.focused, true);
+  a.equal(docs.z, 1);
+  a.ok(docs.src && docs.src.indexOf(".html") >= 0, "carries the panel source");
+  var closed = w.list().filter(function(p){ return !p.open; })[0];
+  a.equal(closed.z, 0, "closed panels have z=0");
+});
+
+suite.test("unknown panels and illegal focus are refused", function(a){
+  var w = ws();
+  a.throws(function(){ w.open("ghost"); });
+  a.throws(function(){ w.focus("harbor"); }, "cannot focus an unopened panel");
+});
+
+suite.test("reset() closes everything", function(a){
+  var w = ws();
+  w.open("harbor"); w.open("terminal");
+  w.reset();
+  a.equal(w.status().open, 0);
+  a.equal(w.focused(), null);
+});
+
+suite.test("custom panel sets are supported and validated", function(a){
+  var w = OceanicCore.createWorkspace({ panels: [{ id: "one", title: "One", src: "one.html" }] });
+  a.equal(w.open("one").focused, "one");
+  a.throws(function(){ OceanicCore.createWorkspace({ panels: [] }); }, "needs a panel");
+  a.throws(function(){ OceanicCore.createWorkspace({ panels: [{ id: "d", title: "A" }, { id: "d", title: "B" }] }); }, "duplicate ids");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Desktop";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>
