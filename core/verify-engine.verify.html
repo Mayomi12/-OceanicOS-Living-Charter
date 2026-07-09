@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Verification Engine</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:800px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:34px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  #verdict,.verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Verification Engine</b> (build 0004, Stage 1). Zero-runtime — this page IS the test harness.</div>
+
+<h2>Part 1 — Independent bootstrap check (the engine cannot certify itself alone)</h2>
+<table id="results"><tr><th>#</th><th>Assertion</th><th>Result</th></tr></table>
+<div id="verdict">running…</div>
+
+<h2>Part 2 — Live proof: the engine verifying a real suite, rendered by its own renderTo()</h2>
+<div id="demo"></div>
+<div class="note">This section is produced entirely by verify-engine.js — if you can read a table and verdict above this line, the engine's browser rendering works end to end.</div>
+
+<script src="verify-engine.js"></script>
+<script>
+"use strict";
+/* ---- minimal independent checker (same pattern as build 0003) ---- */
+var results = [];
+function t(name, fn){
+  try { var ok = fn() === true; results.push({name:name, ok:ok, err:null}); }
+  catch(e){ results.push({name:name, ok:false, err:String(e)}); }
+}
+
+var fakeTime = 100;
+var clock = function(){ return (fakeTime += 10); };
+
+t("factory exists and exposes the full API", function(){
+  var v = OceanicCore.createVerifier({name:"api"});
+  return typeof OceanicCore.createVerifier==="function" && typeof v.test==="function"
+      && typeof v.run==="function" && typeof v.renderTo==="function" && typeof v.assert==="object";
+});
+t("a passing test is recorded ok, verdict PASS", function(){
+  var v = OceanicCore.createVerifier({name:"p", now:clock});
+  v.test("one", function(a){ a.ok(true); });
+  var r = v.run();
+  return r.verdict==="PASS" && r.passed===1 && r.failed===0 && r.tests[0].ok===true && r.tests[0].error===null;
+});
+t("a failing assertion is caught inside run(), not thrown out", function(){
+  var v = OceanicCore.createVerifier({name:"f", now:clock});
+  v.test("bad", function(a){ a.ok(false, "must fail"); });
+  var r = v.run(); // if this throws, t() catches and the assertion fails
+  return r.verdict==="FAIL" && r.failed===1 && r.tests[0].ok===false && r.tests[0].error.indexOf("must fail")>=0;
+});
+t("one failure among passes → verdict FAIL with correct counts", function(){
+  var v = OceanicCore.createVerifier({name:"mix", now:clock});
+  v.test("a", function(a){ a.ok(1); }).test("b", function(a){ a.equal(1,2); }).test("c", function(a){ a.ok(true); });
+  var r = v.run();
+  return r.verdict==="FAIL" && r.total===3 && r.passed===2 && r.failed===1;
+});
+t("an empty suite cannot PASS (no vacuous verification)", function(){
+  var r = OceanicCore.createVerifier({name:"empty"}).run();
+  return r.verdict==="FAIL" && r.total===0;
+});
+t("assert.ok: truthy passes, falsy throws AssertionError", function(){
+  var A = OceanicCore.createVerifier.assert;
+  A.ok(1);
+  try { A.ok(0); return false; } catch(e){ return e.name==="AssertionError"; }
+});
+t("assert.equal: strict — 1 equals 1, but 1 does not equal \"1\"", function(){
+  var A = OceanicCore.createVerifier.assert;
+  A.equal(1,1);
+  try { A.equal(1,"1"); return false; } catch(e){ return true; }
+});
+t("assert.deepEqual: matches nested objects, rejects differing ones", function(){
+  var A = OceanicCore.createVerifier.assert;
+  A.deepEqual({a:1,b:{c:[1,2]}}, {a:1,b:{c:[1,2]}});
+  try { A.deepEqual({a:1}, {a:2}); return false; } catch(e){ return true; }
+});
+t("assert.throws: passes when fn throws, fails honestly when it does not", function(){
+  var A = OceanicCore.createVerifier.assert;
+  A.throws(function(){ throw new Error("x"); });
+  try { A.throws(function(){}); return false; } catch(e){ return e.message.indexOf("did not")>=0; }
+});
+t("results carry injected-clock timestamps in order", function(){
+  var v = OceanicCore.createVerifier({name:"time", now:clock});
+  v.test("one", function(a){ a.ok(true); }).test("two", function(a){ a.ok(true); });
+  var r = v.run();
+  return r.startedAt < r.tests[0].at && r.tests[0].at < r.tests[1].at && r.tests[1].at < r.finishedAt;
+});
+t("results record is deep-frozen — history cannot be rewritten", function(){
+  var v = OceanicCore.createVerifier({name:"frozen"});
+  v.test("one", function(a){ a.ok(true); });
+  var r = v.run();
+  try { r.verdict="FAIL"; r.tests[0].ok=false; } catch(e){ /* strict mode may throw; fine */ }
+  return r.verdict==="PASS" && r.tests[0].ok===true && Object.isFrozen(r) && Object.isFrozen(r.tests[0]);
+});
+t("test() validates inputs and is chainable", function(){
+  var v = OceanicCore.createVerifier({name:"chain"});
+  var chained = v.test("a", function(a){ a.ok(true); }) === v;
+  try { v.test("", function(){}); return false; } catch(e1){}
+  try { v.test("x", "not a function"); return false; } catch(e2){}
+  return chained;
+});
+t("renderTo renders one row per test plus a verdict banner", function(){
+  var v = OceanicCore.createVerifier({name:"render"});
+  v.test("a", function(a){ a.ok(true); }).test("b", function(a){ a.ok(true); });
+  var el = document.createElement("div");
+  var r = v.renderTo(el);
+  var rows = el.querySelectorAll("table tr").length; // 1 header + 2 tests
+  var banner = el.querySelector(".verdict");
+  return r.verdict==="PASS" && rows===3 && banner && banner.textContent.indexOf("ALL 2 PASS")>=0;
+});
+t("renderTo rejects a non-element honestly", function(){
+  var v = OceanicCore.createVerifier({name:"guard"});
+  v.test("a", function(a){ a.ok(true); });
+  try { v.renderTo(null); return false; } catch(e){ return true; }
+});
+
+/* ---- render Part 1 ---- */
+var table=document.getElementById("results"); var allPass=true;
+results.forEach(function(r,i){
+  if(!r.ok) allPass=false;
+  var row=table.insertRow();
+  row.insertCell().textContent=String(i+1).padStart(2,"0");
+  row.insertCell().textContent=r.name + (r.err? "  ["+r.err+"]" : "");
+  var c=row.insertCell(); c.textContent=r.ok?"PASS":"FAIL"; c.className=r.ok?"pass":"fail";
+});
+var v=document.getElementById("verdict");
+v.textContent = allPass ? "✅ ALL " + results.length + " ASSERTIONS PASS — capability verified. Release permitted."
+                        : "❌ FAILURES PRESENT — capability NOT verified. Release forbidden.";
+v.className = allPass ? "pass" : "fail";
+document.title = (allPass?"✅":"❌") + " Ω∞ Verification Engine";
+
+/* ---- Part 2: the engine demonstrating itself ---- */
+var demo = OceanicCore.createVerifier({name:"Heartbeat-style demo suite"});
+demo.test("water remembers: 2 + 2 equals 4", function(a){ a.equal(2+2, 4); })
+    .test("deep structures compare honestly", function(a){ a.deepEqual({drop:{stage:1}}, {drop:{stage:1}}); })
+    .test("errors are expected where promised", function(a){ a.throws(function(){ JSON.parse("{"); }); });
+demo.renderTo(document.getElementById("demo"));
+</script>
+</body>
+</html>

@@ -6,7 +6,8 @@ Every verified capability, recorded. Per the Builder doctrine: *Observe. Verify.
 |---|------|-------|-----------|--------------|---------|
 | 0001 | 2026-07-08 | 0 | Living Charter frozen | git tag on ratified commit `40751e4` | `charter-v1.0.0` |
 | 0002 | 2026-07-08 | 0 | Repository established (doctrine + log resident) | files present on `main` | this commit |
-| 0003 | 2026-07-08 | 0 | **Core: Heartbeat** — pure-JS pulse module, zero-runtime | `core/verify.html` — open in any browser, all tests must PASS | this commit |
+| 0003 | 2026-07-08 | 0 | **Core: Heartbeat** — pure-JS pulse module, zero-runtime | `core/verify.html` — open in any browser, all tests must PASS | `632c231` |
+| 0004 | 2026-07-08 | 1 | **Core: Verification Engine** — reusable test runner (`createVerifier`): assert.ok/equal/deepEqual/throws, sequential run with caught failures, deep-frozen immutable results, DOM renderTo | `core/verify-engine.verify.html` — 14 independent bootstrap assertions must all PASS; empty suites cannot PASS | this commit |
 
 ## Constraints of record
 
