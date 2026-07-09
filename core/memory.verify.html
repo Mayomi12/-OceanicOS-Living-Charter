@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Memory</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:800px;margin:auto}
+  h1{font-size:18px} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:20px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Memory</b> (build 0005, Stage 1). Suite runs on the <b>Verification Engine</b> (build 0004) — the doctrine compounding.</div>
+<div id="suite"></div>
+<div class="note">Append-only · corrections supersede, never erase · provenance on every record · no delete API exists at all.</div>
+
+<script src="verify-engine.js"></script>
+<script src="memory.js"></script>
+<script>
+"use strict";
+var fakeTime = 1000;
+var clock = function(){ return (fakeTime += 10); };
+var nextId = 0;
+var ids = function(){ return "id-" + (++nextId); };
+function freshMemory(extra){
+  var opts = { name:"test", now:clock, idgen:ids };
+  if (extra) Object.keys(extra).forEach(function(k){ opts[k]=extra[k]; });
+  return OceanicCore.createMemory(opts);
+}
+/* a fake localStorage-compatible adapter */
+function fakeStorage(){
+  var data = {}; var writes = 0;
+  return {
+    getItem: function(k){ return Object.prototype.hasOwnProperty.call(data,k) ? data[k] : null; },
+    setItem: function(k,v){ data[k]=String(v); writes++; },
+    _writes: function(){ return writes; }
+  };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Memory (build 0005)" });
+
+suite.test("factory exists and exposes the full API (and nothing destructive)", function(a){
+  var m = freshMemory();
+  a.ok(typeof OceanicCore.createMemory === "function", "factory");
+  ["remember","amend","get","recall","timeline","exportSnapshot","status"].forEach(function(fn){
+    a.equal(typeof m[fn], "function", "api has " + fn);
+  });
+});
+
+suite.test("no delete, forget, or clear exists — history cannot be erased", function(a){
+  var m = freshMemory();
+  a.equal(typeof m.delete, "undefined", "no delete");
+  a.equal(typeof m.forget, "undefined", "no forget");
+  a.equal(typeof m.clear, "undefined", "no clear");
+});
+
+suite.test("remember appends a frozen record with id, timestamp, defaults", function(a){
+  var m = freshMemory();
+  var r = m.remember({ body:"the ocean is deep" });
+  a.ok(r.id, "has id");
+  a.ok(r.at > 1000, "injected clock timestamp");
+  a.equal(r.type, "observation", "default type");
+  a.equal(r.confidence, "medium", "default confidence");
+  a.equal(r.supersedes, null, "fresh record supersedes nothing");
+  a.equal(m.status().count, 1, "count incremented");
+});
+
+suite.test("records are immutable — mutation attempts change nothing", function(a){
+  var m = freshMemory();
+  var r = m.remember({ body:"unchangeable" });
+  try { r.body = "changed"; r.confidence = "certain"; } catch(e){}
+  a.equal(r.body, "unchangeable");
+  a.equal(r.confidence, "medium");
+  a.ok(Object.isFrozen(r), "record frozen");
+});
+
+suite.test("remember validates: body required, confidence from the honest scale", function(a){
+  var m = freshMemory();
+  a.throws(function(){ m.remember({}); }, "missing body throws");
+  a.throws(function(){ m.remember({ body:"x", confidence:"absolutely" }); }, "invalid confidence throws");
+  m.remember({ body:"x", confidence:"speculation" }); // valid scale value accepted
+  a.equal(m.status().count, 1);
+});
+
+suite.test("get(id) retrieves; unknown id is null, not an exception", function(a){
+  var m = freshMemory();
+  var r = m.remember({ body:"findable" });
+  a.equal(m.get(r.id).body, "findable");
+  a.equal(m.get("no-such-id"), null);
+});
+
+suite.test("timeline preserves order and returns a copy", function(a){
+  var m = freshMemory();
+  var r1 = m.remember({ body:"first" });
+  var r2 = m.remember({ body:"second" });
+  var tl = m.timeline();
+  a.equal(tl.length, 2);
+  a.ok(tl[0].at < tl[1].at, "chronological");
+  a.equal(tl[0].id, r1.id); a.equal(tl[1].id, r2.id);
+  tl.push({ fake:true });
+  a.equal(m.timeline().length, 2, "copy — internal state untouched");
+});
+
+suite.test("recall by text is case-insensitive substring on body", function(a){
+  var m = freshMemory();
+  m.remember({ body:"The Charter was frozen today" });
+  m.remember({ body:"heartbeat pulses" });
+  a.equal(m.recall("CHARTER").length, 1);
+  a.equal(m.recall({ text:"pulse" }).length, 1);
+  a.equal(m.recall("nothing-matches").length, 0);
+});
+
+suite.test("recall by type filters records", function(a){
+  var m = freshMemory();
+  m.remember({ body:"a fact", type:"fact" });
+  m.remember({ body:"a plan", type:"plan" });
+  m.remember({ body:"another fact", type:"fact" });
+  a.equal(m.recall({ type:"fact" }).length, 2);
+  a.equal(m.recall({ type:"plan" })[0].body, "a plan");
+});
+
+suite.test("amend supersedes openly — the original remains in the timeline", function(a){
+  var m = freshMemory();
+  var old = m.remember({ body:"pluto is a planet", confidence:"high" });
+  var fix = m.amend(old.id, { body:"pluto is a dwarf planet", confidence:"certain", source:"IAU 2006" });
+  a.equal(fix.supersedes, old.id, "correction declares what it supersedes");
+  a.equal(m.timeline().length, 2, "NOTHING was erased");
+  a.equal(m.get(old.id).body, "pluto is a planet", "original intact");
+  a.equal(m.status().superseded, 1);
+  a.equal(m.status().current, 1);
+});
+
+suite.test("recall hides superseded records by default, reveals on request", function(a){
+  var m = freshMemory();
+  var old = m.remember({ body:"pluto is a planet" });
+  m.amend(old.id, { body:"pluto is a dwarf planet" });
+  var current = m.recall("pluto");
+  a.equal(current.length, 1);
+  a.equal(current[0].body, "pluto is a dwarf planet");
+  a.equal(m.recall({ text:"pluto", includeSuperseded:true }).length, 2, "history visible on demand");
+});
+
+suite.test("amend guards honestly: unknown id throws; double-amend redirected", function(a){
+  var m = freshMemory();
+  a.throws(function(){ m.amend("ghost", { body:"x" }); }, "unknown id");
+  var old = m.remember({ body:"v1" });
+  m.amend(old.id, { body:"v2" });
+  a.throws(function(){ m.amend(old.id, { body:"v3" }); }, "amending an already-superseded record is refused");
+});
+
+suite.test("storage adapter persists on every append and hydrates a new memory", function(a){
+  var store = fakeStorage();
+  var m1 = freshMemory({ storage: store, storageKey: "k" });
+  m1.remember({ body:"survives reload", source:"test" });
+  var old = m1.remember({ body:"v1" });
+  m1.amend(old.id, { body:"v2" });
+  a.ok(store._writes() >= 3, "persisted on each append");
+  var m2 = freshMemory({ storage: store, storageKey: "k" });
+  a.equal(m2.status().count, 3, "hydrated full history");
+  a.equal(m2.status().superseded, 1, "supersession survives reload");
+  a.equal(m2.recall("survives")[0].source, "test", "provenance survives reload");
+});
+
+suite.test("a failing storage never loses the in-memory record", function(a){
+  var broken = { getItem: function(){ return null; }, setItem: function(){ throw new Error("disk full"); } };
+  var m = freshMemory({ storage: broken });
+  var r = m.remember({ body:"kept despite storage failure" });
+  a.equal(m.get(r.id).body, "kept despite storage failure");
+  a.equal(m.status().storageErrors, 1, "failure counted honestly, not hidden");
+});
+
+suite.test("exportSnapshot round-trips as JSON with full provenance", function(a){
+  var m = freshMemory();
+  m.remember({ body:"snapshot me", source:"here", confidence:"high" });
+  var snap = JSON.parse(m.exportSnapshot());
+  a.equal(snap.records.length, 1);
+  a.equal(snap.records[0].source, "here");
+  a.equal(snap.records[0].confidence, "high");
+});
+
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Memory Verification";
+</script>
+</body>
+</html>
