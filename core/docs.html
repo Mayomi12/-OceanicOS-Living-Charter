@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ OceanicOS — Documentation</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:940px;margin:auto;line-height:1.5}
+  h1{font-size:20px} h2{font-size:15px;margin-top:32px;color:#8fb3c4}
+  .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:7px 10px;font-size:12px;text-align:left;vertical-align:top}
+  th{color:#8fb3c4}
+  a{color:#38bdf8;text-decoration:none} a:hover{text-decoration:underline}
+  code{color:#8fb3c4}
+  .links{margin-top:14px;font-size:13px}
+  .links a{margin-right:16px}
+  footer{margin-top:34px;color:#8fb3c4;font-size:12px}
+</style>
+</head>
+<body>
+<h1>Ω♾️V :: OceanicOS — Documentation</h1>
+<div class="sub">Generated from the system's own live sources — the capabilities index and <code>api.describe()</code>. Nothing here is hand-maintained prose; it cannot drift from the code.</div>
+<div class="links">
+  <a href="../Ω∞ OceanicOS Living Charter.md">📜 Charter</a>
+  <a href="verify-all.html">✅ Continuous Verification</a>
+  <a href="cli.verify.html">⌨️ Live CLI</a>
+  <a href="../BUILD_LOG.md">📖 Build Log</a>
+</div>
+<div id="docs"></div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="docs.js"></script>
+<script>
+"use strict";
+var api = OceanicCore.createAPI({ oceanic: OceanicCore.createOceanic({ manual: true }) });
+OceanicCore.createDocs({ api: api }).render(document.getElementById("docs"));
+document.title = "Ω∞ OceanicOS — Documentation";
+</script>
+<footer>Ω♾️V :: ƆCEANiC_OS · generated documentation · every capability links to its live verification</footer>
+</body>
+</html>

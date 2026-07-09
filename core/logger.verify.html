@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Logger</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:860px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:34px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .lv-debug{color:#8fb3c4} .lv-info{color:#38bdf8} .lv-warn{color:#fbbf24} .lv-error{color:#fb7185}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Logger</b> (build 0014, Stage 2 · Builder). The running system's operational record — bounded, levelled, observable. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — a live log tail</h2>
+<table id="tail"><tr><th>#</th><th>At</th><th>Level</th><th>Message</th></tr></table>
+<div class="note">These entries were emitted live and delivered to a subscriber that rendered this table; debug entries below the info threshold were counted but not kept.</div>
+
+<script src="verify-engine.js"></script>
+<script src="logger.js"></script>
+<script>
+"use strict";
+var fakeTime = 1000;
+var clock = function(){ return (fakeTime += 10); };
+function mk(opts){ opts = opts || {}; opts.now = clock; return OceanicCore.createLogger(opts); }
+
+var suite = OceanicCore.createVerifier({ name: "Logger (build 0014)" });
+
+suite.test("factory exists, publishes LEVELS, exposes the API", function(a){
+  a.equal(typeof OceanicCore.createLogger, "function");
+  a.deepEqual(OceanicCore.createLogger.LEVELS, ["debug","info","warn","error"]);
+  var log = mk();
+  ["log","debug","info","warn","error","onLog","setMinLevel","history","recent","byLevel","status"].forEach(function(fn){
+    a.equal(typeof log[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("a newborn logger is empty; default minLevel is info", function(a){
+  var s = mk().status();
+  a.equal(s.emitted, 0); a.equal(s.filtered, 0); a.equal(s.retained, 0);
+  a.equal(s.minLevel, "info");
+  a.deepEqual(s.counts, { debug:0, info:0, warn:0, error:0 });
+});
+
+suite.test("entries are sequenced, timestamped, level-tagged and deep-frozen", function(a){
+  var log = mk();
+  var e = log.info("system started", { pid: 1 });
+  a.equal(e.seq, 1);
+  a.equal(e.level, "info");
+  a.equal(e.message, "system started");
+  a.ok(typeof e.at === "number", "timestamped from injected clock");
+  a.deepEqual(e.meta, { pid: 1 });
+  a.ok(Object.isFrozen(e) && Object.isFrozen(e.meta), "entry and meta frozen");
+});
+
+suite.test("levels below minLevel are dropped (counted, not kept) and return null", function(a){
+  var log = mk(); // minLevel info
+  a.equal(log.debug("noisy"), null, "debug returns null under info threshold");
+  log.info("kept");
+  var s = log.status();
+  a.equal(s.filtered, 1, "the dropped debug was counted");
+  a.equal(s.emitted, 1, "only the info was emitted");
+  a.equal(s.counts.debug, 0);
+});
+
+suite.test("level convenience methods route to the right level", function(a){
+  var log = mk({ minLevel: "debug" });
+  log.debug("d"); log.info("i"); log.warn("w"); log.error("e");
+  a.deepEqual(log.status().counts, { debug:1, info:1, warn:1, error:1 });
+});
+
+suite.test("log() validates level and message", function(a){
+  var log = mk();
+  a.throws(function(){ log.log("trace", "x"); }, "unknown level");
+  a.throws(function(){ log.info(""); }, "empty message");
+  a.throws(function(){ log.log("info", 42); }, "non-string message");
+});
+
+suite.test("subscribers receive entries live; unsubscribe stops delivery", function(a){
+  var log = mk();
+  var seen = [];
+  var off = log.onLog(function(e){ seen.push(e.level + ":" + e.message); });
+  log.info("one"); log.warn("two");
+  off();
+  log.error("three");
+  a.deepEqual(seen, ["info:one", "warn:two"], "delivered until unsubscribed");
+  a.throws(function(){ log.onLog(123); }, "onLog needs a function");
+});
+
+suite.test("a throwing subscriber never breaks logging", function(a){
+  var log = mk();
+  log.onLog(function(){ throw new Error("bad subscriber"); });
+  var before = log.status().emitted;
+  var e = log.info("still logged");
+  a.ok(!!e, "the entry was still produced");
+  a.equal(log.status().emitted, before + 1);
+});
+
+suite.test("history is a bounded ring buffer that keeps the newest", function(a){
+  var log = mk({ historyLimit: 3 });
+  ["a","b","c","d","e"].forEach(function(m){ log.info(m); });
+  var h = log.history();
+  a.equal(h.length, 3, "bounded to the limit");
+  a.deepEqual(h.map(function(x){ return x.message; }), ["c","d","e"], "oldest aged out");
+  a.equal(log.status().emitted, 5, "but the total emitted count is not lost");
+  a.equal(log.status().historyLimit, 3, "the limit is visible");
+});
+
+suite.test("history() and recent() return copies, not the internal buffer", function(a){
+  var log = mk();
+  log.info("x");
+  var h = log.history(); h.push({ forged: true });
+  a.equal(log.history().length, 1, "forged push did not take");
+  var r = log.recent(1); r.push({ forged: true });
+  a.equal(log.recent(1).length, 1);
+});
+
+suite.test("byLevel() and recent() filter the retained buffer", function(a){
+  var log = mk({ minLevel: "debug", historyLimit: 100 });
+  log.info("i1"); log.error("e1"); log.info("i2"); log.error("e2");
+  a.equal(log.byLevel("error").length, 2);
+  a.equal(log.byLevel("info").length, 2);
+  a.equal(log.recent(2).length, 2, "recent returns the tail");
+  a.equal(log.recent(2)[1].message, "e2", "recent is newest-last");
+  a.throws(function(){ log.byLevel("nope"); });
+});
+
+suite.test("setMinLevel() re-thresholds live and is validated", function(a){
+  var log = mk();
+  a.ok(!!log.info("kept"), "info kept at default");
+  log.setMinLevel("error");
+  a.equal(log.info("now dropped"), null, "info dropped after raising threshold");
+  a.ok(!!log.error("still kept"), "error still kept");
+  a.throws(function(){ OceanicCore.createLogger({ minLevel: "loud" }); }, "bad ctor minLevel");
+  a.throws(function(){ log.setMinLevel("loud"); }, "bad setMinLevel");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Logger";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: a log tail rendered from a subscriber ---- */
+(function(){
+  var log = OceanicCore.createLogger({ now: clock, minLevel: "info" });
+  var table = document.getElementById("tail");
+  log.onLog(function(e){
+    var row = table.insertRow();
+    row.insertCell().textContent = String(e.seq);
+    row.insertCell().textContent = String(e.at);
+    var c = row.insertCell(); c.textContent = e.level.toUpperCase(); c.className = "lv-" + e.level;
+    row.insertCell().textContent = e.message;
+  });
+  log.debug("resolving harbor dependencies");     // dropped, below info
+  log.info("OceanicOS logger online");
+  log.info("heartbeat subscribed");
+  log.warn("north channel shoals below half tide");
+  log.error("would-be decision refused: observation not verified");
+  log.info("operator acknowledged");
+})();
+</script>
+</body>
+</html>

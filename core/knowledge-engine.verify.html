@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Knowledge Engine</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:860px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:34px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .st-established{color:#34d399} .st-deprecated{color:#8fb3c4}
+  code{color:#38bdf8}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Knowledge Engine</b> (build 0009, Stage 1). Composition proof: knowledge stored in <b>Memory</b> (0005), grounded on the <b>Reality Engine</b> (0007), suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — knowledge learned from verified reality, then revised</h2>
+<table id="journey"><tr><th>#</th><th>At</th><th>Statement</th><th>Topics</th><th>Status</th></tr></table>
+<div class="note">The statement deepened as understanding grew; the earlier wording is preserved by Memory, never overwritten. Knowledge could not be learned from the observation until reality had VERIFIED it.</div>
+
+<script src="verify-engine.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script>
+"use strict";
+var fakeTime = 1000;
+var clock = function(){ return (fakeTime += 10); };
+var nextId = 0;
+var ids = function(){ return "id-" + (++nextId); };
+
+function fresh(opts){
+  opts = opts || {};
+  var rmem = OceanicCore.createMemory({ name:"r", now:clock, idgen:ids });
+  var ro = 0;
+  var re = OceanicCore.createRealityEngine({ memory: rmem, oidgen:function(){ return "o-" + (++ro); } });
+  var kmemOpts = { name:"k", now:clock, idgen:ids };
+  if (opts.storage){ kmemOpts.storage = opts.storage; kmemOpts.storageKey = opts.storageKey; }
+  var kmem = OceanicCore.createMemory(kmemOpts);
+  var kk = 0;
+  var ke = OceanicCore.createKnowledgeEngine({ memory: kmem, reality: opts.ungrounded ? null : re, kidgen:function(){ return "k-" + (++kk); } });
+  return { re: re, ke: ke, kmem: kmem };
+}
+// a verified observation to ground knowledge on
+function grounded(){
+  var f = fresh();
+  f.re.observe({ observation:"July tide tables", source:"almanac" }); // o-1
+  f.re.verify("o-1", "checked");
+  return f;
+}
+
+var suite = OceanicCore.createVerifier({ name: "Knowledge Engine (build 0009)" });
+
+suite.test("factory exists; a Memory instance is required; a bad reality is refused", function(a){
+  a.equal(typeof OceanicCore.createKnowledgeEngine, "function");
+  a.throws(function(){ OceanicCore.createKnowledgeEngine(); });
+  a.throws(function(){ OceanicCore.createKnowledgeEngine({ memory: {} }); });
+  a.throws(function(){ OceanicCore.createKnowledgeEngine({ memory: OceanicCore.createMemory(), reality: {} }); });
+  var ke = fresh().ke;
+  ["learn","revise","deprecate","get","byStatus","byTopic","search","topics","knowledge","history","status"].forEach(function(fn){
+    a.equal(typeof ke[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("learn() records the fields and is born ESTABLISHED", function(a){
+  var f = grounded();
+  var k = f.ke.learn({ statement:"Spring tides peak near the new moon", topics:["Tides","Astronomy"], grounds:["o-1"], confidence:"high", source:"almanac" });
+  a.equal(k.body, "Spring tides peak near the new moon");
+  a.equal(k.meta.status, "established");
+  a.deepEqual(k.meta.topics, ["tides","astronomy"], "topics lowercased for stable retrieval");
+  a.deepEqual(k.meta.grounds, ["o-1"]);
+  a.equal(k.confidence, "high");
+  a.ok(!!k.meta.kid, "carries a stable knowledge id");
+});
+
+suite.test("learn() demands a real statement and well-formed topics", function(a){
+  var ke = fresh().ke;
+  a.throws(function(){ ke.learn(); });
+  a.throws(function(){ ke.learn({ topics:["a"] }); }, "no statement");
+  a.throws(function(){ ke.learn({ statement:"s", topics:"notarray" }); }, "topics must be array");
+  a.throws(function(){ ke.learn({ statement:"s", topics:["ok", ""] }); }, "empty topic");
+});
+
+suite.test("topics are de-duplicated case-insensitively", function(a){
+  var ke = fresh().ke;
+  var k = ke.learn({ statement:"s", topics:["Tides","tides","TIDES","moon"] });
+  a.deepEqual(k.meta.topics, ["tides","moon"]);
+});
+
+suite.test("knowledge that names a known observation is refused unless it is VERIFIED", function(a){
+  var f = fresh();
+  f.re.observe({ observation:"unconfirmed swell" }); // o-1, pending
+  a.throws(function(){ f.ke.learn({ statement:"the swell is rising", grounds:["o-1"] }); }, "pending ground refused");
+  f.re.verify("o-1", "buoy agrees");
+  a.equal(f.ke.learn({ statement:"the swell is rising", grounds:["o-1"] }).meta.status, "established", "permitted once verified");
+});
+
+suite.test("a rejected observation cannot ground knowledge; external provenance passes through", function(a){
+  var f = fresh();
+  f.re.observe({ observation:"myth of the kraken" }); f.re.reject("o-1", "folklore");
+  a.throws(function(){ f.ke.learn({ statement:"krakens roam here", grounds:["o-1"] }); }, "rejected ground refused");
+  // a ground that is not an observation at all is external provenance and allowed
+  a.equal(f.ke.learn({ statement:"the almanac is a useful source", grounds:["book:almanac#42"] }).meta.status, "established");
+});
+
+suite.test("byTopic() and search() retrieve current knowledge; topics() tallies", function(a){
+  var f = grounded();
+  var k1 = f.ke.learn({ statement:"Neap tides fall at the quarter moon", topics:["tides","moon"] });
+  f.ke.learn({ statement:"Kai reads the wind", topics:["kai"] });
+  a.equal(f.ke.byTopic("Tides").length, 1, "byTopic is case-insensitive");
+  a.equal(f.ke.byTopic("tides")[0].meta.kid, k1.meta.kid);
+  a.equal(f.ke.search("neap").length, 1, "text search matches the statement");
+  a.equal(f.ke.search("").length, 0, "empty search returns nothing");
+  a.deepEqual(f.ke.topics(), { tides:1, moon:1, kai:1 });
+  a.throws(function(){ f.ke.byTopic(""); });
+});
+
+suite.test("revise() deepens a statement in place, keeping identity, via an AMENDMENT", function(a){
+  var f = grounded();
+  var k = f.ke.learn({ statement:"Tides follow the moon", topics:["tides"] });
+  var rev = f.ke.revise(k.meta.kid, { statement:"Tides follow the moon and, more weakly, the sun", confidence:"certain" });
+  a.equal(rev.supersedes, k.id, "the earlier wording is preserved");
+  a.equal(f.ke.get(k.meta.kid).body, "Tides follow the moon and, more weakly, the sun");
+  a.equal(f.ke.get(k.meta.kid).meta.status, "established", "still established after revision");
+  a.equal(f.ke.get(k.meta.kid).confidence, "certain");
+});
+
+suite.test("revise() re-checks grounds, and rejects an empty statement", function(a){
+  var f = fresh();
+  f.re.observe({ observation:"o" }); // o-1 pending
+  var k = f.ke.learn({ statement:"s", topics:["t"] });
+  a.throws(function(){ f.ke.revise(k.meta.kid, { grounds:["o-1"] }); }, "revising onto a pending ground is refused");
+  a.throws(function(){ f.ke.revise(k.meta.kid, { statement:"" }); }, "empty statement refused");
+});
+
+suite.test("deprecate() retires knowledge; deprecated is terminal and not revisable", function(a){
+  var f = grounded();
+  var k = f.ke.learn({ statement:"old belief", topics:["x"] });
+  a.equal(f.ke.deprecate(k.meta.kid, "superseded").meta.status, "deprecated");
+  a.throws(function(){ f.ke.deprecate(k.meta.kid); }, "already deprecated");
+  a.throws(function(){ f.ke.revise(k.meta.kid, { statement:"y" }); }, "deprecated knowledge is not revised");
+});
+
+suite.test("acting on unknown knowledge is refused; byStatus rejects nonsense", function(a){
+  var f = fresh();
+  a.throws(function(){ f.ke.revise("k-404", { statement:"x" }); });
+  a.throws(function(){ f.ke.deprecate("k-404"); });
+  a.throws(function(){ f.ke.byStatus("nonsense"); });
+});
+
+suite.test("status() reports current knowledge, topic breadth and grounding", function(a){
+  var f = grounded();
+  var k1 = f.ke.learn({ statement:"a", topics:["p","q"] });
+  f.ke.learn({ statement:"b", topics:["q"] });
+  f.ke.deprecate(k1.meta.kid);
+  a.deepEqual(f.ke.status(), { total:2, established:1, deprecated:1, topics:2, grounded:true });
+});
+
+suite.test("an ungrounded engine (no Reality) learns freely and reports grounded:false", function(a){
+  var f = fresh({ ungrounded:true });
+  a.equal(f.ke.learn({ statement:"anything", grounds:["o-anything"] }).meta.status, "established");
+  a.equal(f.ke.status().grounded, false);
+});
+
+suite.test("append-only: Memory keeps every step; history() replays the whole life", function(a){
+  var f = grounded();
+  var k = f.ke.learn({ statement:"v1", topics:["t"] });
+  f.ke.revise(k.meta.kid, { statement:"v2" });
+  f.ke.deprecate(k.meta.kid);
+  a.equal(f.ke.knowledge(false).length, 1, "one current piece of knowledge");
+  a.deepEqual(f.ke.history(k.meta.kid).map(function(r){ return r.body + ":" + r.meta.status; }),
+    ["v1:established", "v2:established", "v2:deprecated"]);
+});
+
+suite.test("survives a persisted round-trip through Memory's storage adapter", function(a){
+  var data = {};
+  var store = { getItem:function(k){ return Object.prototype.hasOwnProperty.call(data,k)?data[k]:null; },
+                setItem:function(k,v){ data[k]=String(v); } };
+  var f = fresh({ storage: store, storageKey:"kk" });
+  var k = f.ke.learn({ statement:"persisted lore", topics:["lore"] });
+  f.ke.revise(k.meta.kid, { statement:"persisted lore, refined" });
+  var kmem2 = OceanicCore.createMemory({ name:"k", now:clock, idgen:ids, storage:store, storageKey:"kk" });
+  var ke2 = OceanicCore.createKnowledgeEngine({ memory: kmem2 });
+  var restored = ke2.get(k.meta.kid);
+  a.ok(!!restored, "knowledge restored from storage");
+  a.equal(restored.body, "persisted lore, refined");
+  a.deepEqual(restored.meta.topics, ["lore"]);
+  a.equal(ke2.byTopic("lore").length, 1, "retrieval works after hydration");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+suite.renderTo(document.getElementById("suite"));
+var record = suite.run();
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Knowledge Engine";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: knowledge learned from verified reality, then revised ---- */
+(function(){
+  var f = fresh();
+  var o = f.re.observe({ observation:"the harbor water rose and fell twice today", source:"tide gauge", evidence:"gauge trace", confidence:"high" });
+  f.re.verify(o.meta.oid, "matches the tide table");
+  var k = f.ke.learn({ statement:"This harbor is semidiurnal — two highs and two lows a day", topics:["Tides","Harbor"], grounds:[o.meta.oid], confidence:"high" });
+  f.ke.revise(k.meta.kid, { statement:"This harbor is semidiurnal: two highs and two lows daily, of unequal height", confidence:"certain" });
+  var table = document.getElementById("journey");
+  f.ke.history(k.meta.kid).forEach(function(r, i){
+    var row = table.insertRow();
+    row.insertCell().textContent = String(i + 1);
+    row.insertCell().textContent = String(r.at);
+    row.insertCell().textContent = r.body;
+    row.insertCell().textContent = r.meta.topics.join(", ");
+    var c = row.insertCell(); c.textContent = r.meta.status.toUpperCase(); c.className = "st-" + r.meta.status;
+  });
+})();
+</script>
+</body>
+</html>

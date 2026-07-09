@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Documentation</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:7px 10px;font-size:12px;text-align:left;vertical-align:top}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  a{color:#38bdf8} code{color:#8fb3c4}
+  #live table{margin-bottom:8px}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Documentation</b> (build 0018, Stage 2 · Builder). Generates the system's docs from its own live sources. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — the generated documentation, rendered here</h2>
+<div id="live"></div>
+<div class="note">Everything below was produced by <code>createDocs({ api }).render()</code> — the capabilities index plus the API reference straight from <code>api.describe()</code>.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="docs.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newApi(){ return OceanicCore.createAPI({ oceanic: OceanicCore.createOceanic({ now: clock, manual: true, name: "docs-test" }) }); }
+
+var suite = OceanicCore.createVerifier({ name: "Documentation (build 0018)" });
+
+suite.test("factory exists; a non-API is refused; CAPABILITIES is published", function(a){
+  a.equal(typeof OceanicCore.createDocs, "function");
+  a.throws(function(){ OceanicCore.createDocs({ api: {} }); });
+  a.ok(OceanicCore.createDocs.CAPABILITIES.length >= 16, "publishes the capability index");
+});
+
+suite.test("every capability row is complete (build, stage, name, module, verify, summary)", function(a){
+  var docs = OceanicCore.createDocs();
+  docs.capabilities().forEach(function(c){
+    a.ok(/^\d{4}$/.test(c.build), "build number " + c.build);
+    a.ok(typeof c.stage === "number", "stage");
+    a.ok(!!c.name, "name");
+    a.ok(/\.(js|html)$/.test(c.module), "module path " + c.module);
+    a.ok(/\.html$/.test(c.verify), "verify page " + c.verify);
+    a.ok(c.summary && c.summary.length > 10, "a real summary");
+  });
+});
+
+suite.test("capabilities() returns a copy — the index cannot be mutated from outside", function(a){
+  var docs = OceanicCore.createDocs();
+  var caps = docs.capabilities();
+  caps.push({ forged: true });
+  a.equal(docs.capabilities().length, OceanicCore.createDocs.CAPABILITIES.length);
+});
+
+suite.test("operations() is empty without an API, and mirrors the API when given one", function(a){
+  a.equal(OceanicCore.createDocs().operations().length, 0);
+  var api = newApi();
+  var docs = OceanicCore.createDocs({ api: api });
+  a.equal(docs.operations().length, api.operations().length);
+});
+
+suite.test("toMarkdown() documents every capability (name and module)", function(a){
+  var docs = OceanicCore.createDocs();
+  var md = docs.toMarkdown();
+  docs.capabilities().forEach(function(c){
+    a.ok(md.indexOf(c.name) >= 0, "mentions " + c.name);
+    a.ok(md.indexOf(c.module) >= 0, "links module " + c.module);
+  });
+});
+
+suite.test("toMarkdown() includes an API reference with every operation — only when an API is given", function(a){
+  a.ok(OceanicCore.createDocs().toMarkdown().indexOf("## API reference") < 0, "no API section without an API");
+  var api = newApi();
+  var md = OceanicCore.createDocs({ api: api }).toMarkdown();
+  a.ok(md.indexOf("## API reference") >= 0, "API section present");
+  api.operations().forEach(function(name){
+    a.ok(md.indexOf(name) >= 0, "documents operation " + name);
+  });
+});
+
+suite.test("render() builds a DOM table with a row per capability", function(a){
+  var host = document.createElement("div");
+  var docs = OceanicCore.createDocs();
+  docs.render(host);
+  var rows = host.querySelectorAll("table tr");
+  // one header + one row per capability
+  a.equal(rows.length, docs.capabilities().length + 1);
+  a.throws(function(){ docs.render(null); }, "render needs an element");
+});
+
+suite.test("render() adds the API reference table when an API is present", function(a){
+  var host = document.createElement("div");
+  var api = newApi();
+  OceanicCore.createDocs({ api: api }).render(host);
+  var tables = host.querySelectorAll("table");
+  a.equal(tables.length, 2, "capabilities table + API table");
+  var apiRows = tables[1].querySelectorAll("tr");
+  a.equal(apiRows.length, api.operations().length + 1, "header + one row per operation");
+});
+
+suite.test("status() counts capabilities and operations", function(a){
+  var api = newApi();
+  var s = OceanicCore.createDocs({ api: api }).status();
+  a.equal(s.capabilities, OceanicCore.createDocs.CAPABILITIES.length);
+  a.equal(s.operations, api.operations().length);
+  a.equal(s.hasApi, true);
+  a.equal(OceanicCore.createDocs().status().hasApi, false);
+});
+
+suite.test("the index documents THIS build (0018) too — the docs describe themselves", function(a){
+  var names = OceanicCore.createDocs().capabilities().map(function(c){ return c.build; });
+  a.ok(names.indexOf("0018") >= 0, "Documentation lists its own build");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Documentation";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: render the real docs ---- */
+OceanicCore.createDocs({ api: newApi() }).render(document.getElementById("live"));
+</script>
+</body>
+</html>

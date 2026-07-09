@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Automation</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:860px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:34px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .s-ok{color:#34d399} .s-failed{color:#fb7185} .s-skipped{color:#8fb3c4}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Automation</b> (build 0016, Stage 2 · Builder). The build loop as a runnable pipeline — halts on first failure, leaves evidence via the Logger. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — the doctrine's build loop, run as a pipeline that fails fast</h2>
+<table id="run"><tr><th>#</th><th>Step</th><th>Status</th><th>Detail</th></tr></table>
+<div class="note">"Test" fails deliberately; every step after it is skipped, not run — nothing proceeds on a broken foundation. The whole run was recorded to a Logger (0014).</div>
+
+<script src="verify-engine.js"></script>
+<script src="logger.js"></script>
+<script src="automation.js"></script>
+<script>
+"use strict";
+var fakeTime = 1000;
+var clock = function(){ return (fakeTime += 10); };
+function mk(opts){ opts = opts || {}; opts.now = clock; return OceanicCore.createPipeline(opts); }
+
+var suite = OceanicCore.createVerifier({ name: "Automation (build 0016)" });
+
+suite.test("factory exists; steps are named and chainable", function(a){
+  a.equal(typeof OceanicCore.createPipeline, "function");
+  var p = mk({ name:"p" });
+  var ret = p.step("one", function(){}).step("two", function(){});
+  a.equal(ret, p, "step() is chainable");
+  a.deepEqual(p.steps(), ["one","two"]);
+});
+
+suite.test("run() executes steps in order over a shared context", function(a){
+  var order = [];
+  var p = mk().step("a", function(ctx){ order.push("a"); ctx.n = 1; })
+              .step("b", function(ctx){ order.push("b"); ctx.n += 1; return ctx.n; });
+  var r = p.run();
+  a.deepEqual(order, ["a","b"], "ran in order");
+  a.equal(r.steps[1].value, 2, "context flowed a→b; return value recorded");
+});
+
+suite.test("a successful run reports ok with an immutable report", function(a){
+  var r = mk().step("x", function(){ return "done"; }).run();
+  a.equal(r.ok, true);
+  a.equal(r.passed, 1); a.equal(r.failed, 0); a.equal(r.total, 1);
+  a.ok(typeof r.startedAt === "number" && typeof r.finishedAt === "number");
+  a.ok(Object.isFrozen(r) && Object.isFrozen(r.steps), "report is deep-frozen");
+});
+
+suite.test("undefined return is success; the value is normalised to null", function(a){
+  var r = mk().step("x", function(){ /* returns undefined */ }).run();
+  a.equal(r.ok, true);
+  a.equal(r.steps[0].status, "ok");
+  a.equal(r.steps[0].value, null);
+});
+
+suite.test("a step FAILS when it throws — and run() never throws", function(a){
+  var r = mk().step("boom", function(){ throw new Error("kaboom"); }).run();
+  a.equal(r.ok, false);
+  a.equal(r.failed, 1);
+  a.equal(r.steps[0].status, "failed");
+  a.equal(r.steps[0].error, "kaboom", "the thrown message is captured");
+});
+
+suite.test("a step FAILS when it explicitly returns false", function(a){
+  var r = mk().step("check", function(){ return false; }).run();
+  a.equal(r.ok, false);
+  a.equal(r.steps[0].status, "failed");
+  a.equal(r.steps[0].error, "step returned false");
+});
+
+suite.test("failure HALTS the loop — later steps are skipped, not run", function(a){
+  var ran = [];
+  var r = mk({ name:"loop" })
+    .step("a", function(){ ran.push("a"); })
+    .step("b", function(){ ran.push("b"); throw new Error("x"); })
+    .step("c", function(){ ran.push("c"); })
+    .step("d", function(){ ran.push("d"); })
+    .run();
+  a.deepEqual(ran, ["a","b"], "c and d never executed");
+  a.equal(r.halted, true);
+  a.equal(r.skipped, 2);
+  a.deepEqual(r.steps.map(function(s){ return s.status; }), ["ok","failed","skipped","skipped"]);
+});
+
+suite.test("stopOnError:false runs every step and tallies all outcomes", function(a){
+  var ran = [];
+  var r = mk({ stopOnError:false })
+    .step("x", function(){ ran.push("x"); throw new Error("e"); })
+    .step("y", function(){ ran.push("y"); })
+    .run();
+  a.deepEqual(ran, ["x","y"], "y ran despite x failing");
+  a.equal(r.failed, 1); a.equal(r.passed, 1); a.equal(r.skipped, 0);
+  a.equal(r.ok, false, "still not ok overall");
+});
+
+suite.test("an empty pipeline is NOT ok — nothing was verified", function(a){
+  var r = mk().run();
+  a.equal(r.ok, false);
+  a.equal(r.total, 0);
+});
+
+suite.test("step() validates its name and function", function(a){
+  a.throws(function(){ mk().step("", function(){}); }, "no name");
+  a.throws(function(){ mk().step("x", 5); }, "no function");
+});
+
+suite.test("with a Logger, each step's outcome is recorded; a bad logger is refused", function(a){
+  var log = OceanicCore.createLogger({ now: clock, minLevel: "debug" });
+  var lines = [];
+  log.onLog(function(e){ lines.push(e.level); });
+  mk({ name:"L", logger: log })
+    .step("ok1", function(){})
+    .step("boom", function(){ throw new Error("x"); })
+    .step("after", function(){})
+    .run();
+  a.ok(lines.indexOf("info") >= 0, "success logged at info");
+  a.ok(lines.indexOf("error") >= 0, "failure logged at error");
+  a.ok(lines.indexOf("warn") >= 0, "skipped step logged at warn");
+  a.throws(function(){ OceanicCore.createPipeline({ logger: {} }); }, "bad logger refused");
+});
+
+suite.test("a throwing logger never breaks the run", function(a){
+  var badlog = { info:function(){ throw new Error("loghurt"); }, warn:function(){}, error:function(){} };
+  var r = mk({ logger: badlog }).step("s", function(){ return 1; }).run();
+  a.equal(r.ok, true, "the run completed despite the logger throwing");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Automation";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: the build loop as a fail-fast pipeline ---- */
+(function(){
+  var log = OceanicCore.createLogger({ now: clock, minLevel: "debug" });
+  var p = OceanicCore.createPipeline({ name: "build-loop", now: clock, logger: log })
+    .step("Observe",  function(ctx){ ctx.observation = "north channel shoals"; return ctx.observation; })
+    .step("Verify",   function(ctx){ ctx.verified = true; return "confirmed by second sounding"; })
+    .step("Build",    function(ctx){ ctx.artifact = "reroute-plan"; return ctx.artifact; })
+    .step("Test",     function(){ throw new Error("a test assertion failed — release forbidden"); })
+    .step("Record",   function(){ return "should not run"; })
+    .step("Release",  function(){ return "should not run"; });
+  var r = p.run();
+  var table = document.getElementById("run");
+  r.steps.forEach(function(s, i){
+    var row = table.insertRow();
+    row.insertCell().textContent = String(i + 1);
+    row.insertCell().textContent = s.name;
+    var c = row.insertCell(); c.textContent = s.status.toUpperCase(); c.className = "s-" + s.status;
+    row.insertCell().textContent = s.error ? s.error : (s.value == null ? "—" : String(s.value));
+  });
+})();
+</script>
+</body>
+</html>

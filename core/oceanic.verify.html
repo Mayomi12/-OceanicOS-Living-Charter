@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — OceanicOS Kernel</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:34px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  #boot{margin-top:14px;background:#061a26;border:1px solid #12455f;padding:14px 16px;border-radius:6px;white-space:pre-wrap;font-size:13px}
+  #boot .cmd{color:#34d399} #boot .pulse{color:#38bdf8;font-weight:bold}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>OceanicOS Kernel</b> (build 0011, Stage 2 · Builder). Assembles all eight Core capabilities into one running system over a single Memory Ocean. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — <span style="color:#34d399">oceanic start</span></h2>
+<div id="boot">booting…</div>
+<div class="note">One command boots the whole system on a single pulse; every engine reports live from the one shared ocean.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script>
+"use strict";
+var fakeTime = 1000;
+var clock = function(){ return (fakeTime += 10); };
+
+// build a system; manual:true so no live timer runs during tests
+function boot(opts){
+  opts = opts || {};
+  var o = { now: clock, manual: true, name: opts.name || "test" };
+  if (opts.storage){ o.storage = opts.storage; o.storageKey = opts.storageKey; }
+  return OceanicCore.createOceanic(o);
+}
+
+var suite = OceanicCore.createVerifier({ name: "OceanicOS Kernel (build 0011)" });
+
+suite.test("createOceanic exists and refuses to assemble without the Core factories", function(a){
+  a.equal(typeof OceanicCore.createOceanic, "function");
+  a.throws(function(){ OceanicCore.createOceanic({ core: {}, now: clock }); }, "empty core has no factories");
+  a.throws(function(){ OceanicCore.createOceanic({ core: { createHeartbeat: function(){} }, now: clock }); }, "incomplete core");
+});
+
+suite.test("the assembled system exposes every engine and the kernel verbs", function(a){
+  var os = boot();
+  ["memory","heartbeat","reality","decisions","knowledge","projects","builds"].forEach(function(k){
+    a.ok(os[k] && typeof os[k] === "object", "engine " + k + " present");
+  });
+  ["start","beat","stop","status","exportSnapshot"].forEach(function(fn){
+    a.equal(typeof os[fn], "function", "verb " + fn + " present");
+  });
+  a.equal(os.version, OceanicCore.createOceanic.VERSION, "reports its version");
+});
+
+suite.test("a newborn system is not yet booted; status is quiet", function(a){
+  var s = boot().status();
+  a.equal(s.booted, false);
+  a.equal(s.pulse, 0);
+  a.equal(s.memory.count, 0, "the ocean starts empty");
+});
+
+suite.test("`oceanic start` boots the whole system on a single pulse", function(a){
+  var os = boot();
+  var b = os.start();
+  a.equal(b.started, true);
+  a.equal(b.pulse, 1, "boot is the first pulse");
+  a.ok(typeof b.at === "number", "boot is timestamped");
+  a.equal(os.status().booted, true);
+  a.equal(os.status().pulse, 1);
+});
+
+suite.test("ONE Memory Ocean — every engine writes into the same shared Memory", function(a){
+  var os = boot();
+  var o = os.reality.observe({ observation:"tide rising", source:"buoy" }); os.reality.verify(o.meta.oid, "ok");
+  var d = os.decisions.propose({ question:"reroute?", options:["yes","no"], grounds:[o.meta.oid] }); os.decisions.decide(d.meta.did, "yes");
+  os.knowledge.learn({ statement:"harbor is semidiurnal", topics:["tides"], grounds:[o.meta.oid] });
+  var p = os.projects.open({ name:"passage" }); os.projects.link(p.meta.pid, { kind:"observation", id:o.meta.oid });
+  os.builds.record({ number: os.builds.next(), stage:2, capability:"in-ocean build", verification:"this suite", release:"local" });
+  // 2 reality (observe+verify) + 2 decision (propose+decide) + 1 knowledge + 2 project (open+link) + 1 build = 8
+  a.equal(os.status().memory.count, 8, "all record types coexist in one ocean");
+  // and each engine reads back only its own type
+  a.equal(os.reality.status().verified, 1);
+  a.equal(os.decisions.status().decided, 1);
+  a.equal(os.knowledge.status().established, 1);
+  a.equal(os.projects.status().active, 1);
+  a.equal(os.builds.status().builds, 1);
+});
+
+suite.test("record types do not collide — engines never see each other's records", function(a){
+  var os = boot();
+  os.reality.observe({ observation:"o" });
+  os.projects.open({ name:"p" });
+  os.knowledge.learn({ statement:"k", topics:["t"] });
+  a.equal(os.reality.observations(false).length, 1, "reality sees only its observation");
+  a.equal(os.projects.projects(false).length, 1, "projects sees only its project");
+  a.equal(os.knowledge.knowledge(false).length, 1, "knowledge sees only its knowledge");
+  a.equal(os.decisions.decisions(false).length, 0, "decisions engine sees nothing that isn't a decision");
+});
+
+suite.test("VERIFICATION BEFORE ACCEPTANCE holds across the assembled whole", function(a){
+  var os = boot();
+  var o = os.reality.observe({ observation:"unconfirmed swell" }); // pending
+  var d = os.decisions.propose({ question:"act?", options:["a","b"], grounds:[o.meta.oid] });
+  a.throws(function(){ os.decisions.decide(d.meta.did, "a"); }, "decision refuses pending ground");
+  a.throws(function(){ os.knowledge.learn({ statement:"x", grounds:[o.meta.oid] }); }, "knowledge refuses pending ground");
+  os.reality.verify(o.meta.oid, "confirmed");
+  a.equal(os.decisions.decide(d.meta.did, "a").meta.status, "decided", "permitted once reality verifies");
+});
+
+suite.test("status() aggregates the pulse and every engine's state", function(a){
+  var os = boot();
+  os.start();
+  var s = os.status();
+  a.ok("version" in s && "alive" in s && "pulse" in s, "kernel fields");
+  ["memory","reality","decisions","knowledge","projects","builds"].forEach(function(k){
+    a.ok(s[k] && typeof s[k] === "object", "includes " + k + " status");
+  });
+});
+
+suite.test("beat() and stop() drive the pulse; the pulse only ever rises", function(a){
+  var os = boot();
+  os.start();               // pulse 1
+  os.beat();                // pulse 2
+  os.beat({ source:"x" });  // pulse 3
+  a.equal(os.status().pulse, 3);
+  a.equal(os.stop(), false, "manual system has no live timer to stop");
+});
+
+suite.test("the whole system is one snapshot — exportSnapshot() equals the ocean", function(a){
+  var os = boot();
+  os.reality.observe({ observation:"a" });
+  os.projects.open({ name:"b" });
+  var snap = JSON.parse(os.exportSnapshot());
+  a.equal(snap.records.length, os.status().memory.count, "snapshot carries every record");
+  a.equal(snap.records.length, 2);
+});
+
+suite.test("persistence: one storage adapter persists and rehydrates the entire system", function(a){
+  var data = {};
+  var store = { getItem:function(k){ return Object.prototype.hasOwnProperty.call(data,k)?data[k]:null; },
+                setItem:function(k,v){ data[k]=String(v); } };
+  var os1 = boot({ name:"persisted", storage: store, storageKey:"ocean" });
+  var o = os1.reality.observe({ observation:"kept observation" }); os1.reality.verify(o.meta.oid, "ok");
+  os1.knowledge.learn({ statement:"remembered lore", topics:["lore"] });
+  os1.projects.open({ name:"ongoing voyage" });
+  var os2 = boot({ name:"persisted", storage: store, storageKey:"ocean" });
+  a.equal(os2.status().memory.count, 4, "the whole ocean rehydrated");
+  a.equal(os2.reality.get(o.meta.oid).meta.status, "verified", "reality restored");
+  a.equal(os2.knowledge.byTopic("lore").length, 1, "knowledge restored and retrievable");
+  a.equal(os2.projects.status().active, 1, "projects restored");
+});
+
+suite.test("two systems are independent — separate oceans, separate pulses", function(a){
+  var a1 = boot({ name:"a" });
+  var b1 = boot({ name:"b" });
+  a1.start(); a1.beat();
+  b1.reality.observe({ observation:"only in b" });
+  a.equal(a1.status().pulse, 2);
+  a.equal(b1.status().pulse, 0, "b never beat");
+  a.equal(a1.status().memory.count, 0, "a has no records");
+  a.equal(b1.status().memory.count, 1, "b's record is b's alone");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+suite.renderTo(document.getElementById("suite"));
+var record = suite.run();
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ OceanicOS Kernel";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: oceanic start, then a full turn of the build loop ---- */
+(function(){
+  var os = boot({ name:"harbor" });
+  var b = os.start();
+  var o = os.reality.observe({ observation:"the north channel shoals at low water", source:"survey", evidence:"depth sounding", confidence:"high" });
+  os.reality.verify(o.meta.oid, "second sounding agrees");
+  var d = os.decisions.propose({ question:"which route this winter?", options:["north channel","long way round"], grounds:[o.meta.oid], rationale:"safety over speed" });
+  os.decisions.decide(d.meta.did, "long way round", "shoal verified");
+  var k = os.knowledge.learn({ statement:"The north channel is unsafe below half tide", topics:["tides","harbor","safety"], grounds:[o.meta.oid], confidence:"high" });
+  var p = os.projects.open({ name:"Winter routing", goal:"no grounded ships this season" });
+  os.projects.link(p.meta.pid, { kind:"observation", id:o.meta.oid });
+  os.projects.link(p.meta.pid, { kind:"decision", id:d.meta.did });
+  os.projects.link(p.meta.pid, { kind:"knowledge", id:k.meta.kid });
+  var s = os.status();
+  var el = document.getElementById("boot");
+  el.innerHTML =
+    '<span class="cmd">$ oceanic start</span>\n' +
+    'OceanicOS v' + s.version + ' — booted at t=' + b.at + ', pulse <span class="pulse">' + s.pulse + '</span>\n' +
+    '\nOne turn of the build loop, all in one ocean:\n' +
+    '  observed   → "' + o.body + '"  [' + os.reality.get(o.meta.oid).meta.status.toUpperCase() + ']\n' +
+    '  decided    → "' + os.decisions.get(d.meta.did).meta.choice + '"  (grounded on verified reality)\n' +
+    '  learned    → "' + k.body + '"  {' + os.knowledge.get(k.meta.kid).meta.topics.join(", ") + '}\n' +
+    '  project    → "' + p.body + '"  gathering ' + os.projects.links(p.meta.pid).length + ' threads\n' +
+    '\nocean: ' + s.memory.count + ' records · reality ' + s.reality.verified + '✓ · decisions ' + s.decisions.decided +
+    ' · knowledge ' + s.knowledge.established + ' · projects ' + s.projects.active + ' active';
+})();
+</script>
+</body>
+</html>

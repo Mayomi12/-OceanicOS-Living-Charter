@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Harbor</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Harbor</b> (build 0019, Stage 3 · Applications). The first Application — a controller/view-model that turns the running system into a usable screen. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+<div class="note">The Harbor application itself is <a href="harbor.html" style="color:#38bdf8">harbor.html</a> — this page verifies its logic.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="cli.js"></script>
+<script src="logger.js"></script>
+<script src="harbor.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newHarbor(){ return OceanicCore.createHarbor({ oceanic: OceanicCore.createOceanic({ now: clock, manual: true, name: "harbor-test" }), now: clock }); }
+
+var suite = OceanicCore.createVerifier({ name: "Harbor (build 0019)" });
+
+suite.test("createHarbor requires an assembled system and its dependency factories", function(a){
+  a.equal(typeof OceanicCore.createHarbor, "function");
+  a.throws(function(){ OceanicCore.createHarbor(); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createHarbor({ oceanic: OceanicCore.createOceanic({ manual:true }), deps: {} }); }, "empty deps");
+  var h = newHarbor();
+  ["boot","exec","dashboard","resources","transcript","help","status"].forEach(function(fn){
+    a.equal(typeof h[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("a fresh harbor is not booted; the dashboard is quiet", function(a){
+  var d = newHarbor().dashboard();
+  a.equal(d.booted, false);
+  a.equal(d.pulse, 0);
+  a.equal(d.ocean, 0);
+  a.deepEqual(d.activity, []);
+});
+
+suite.test("boot() boots the system, logs it, and is idempotent", function(a){
+  var h = newHarbor();
+  var d = h.boot();
+  a.equal(d.booted, true);
+  a.equal(d.pulse, 1);
+  a.equal(d.activity.length, 1, "boot left an activity line");
+  a.ok(d.activity[0].message.indexOf("harbor online") >= 0);
+  var pulse = h.dashboard().pulse;
+  h.boot();
+  a.equal(h.dashboard().pulse, pulse, "second boot does nothing");
+});
+
+suite.test("exec() routes to the CLI, records the transcript, and returns a fresh dashboard", function(a){
+  var h = newHarbor(); h.boot();
+  var r = h.exec("observe the north channel shoals");
+  a.equal(r.ok, true);
+  a.ok(r.message.indexOf("observed") >= 0);
+  a.equal(r.dashboard.ocean, 1, "the returned dashboard reflects the new record");
+  a.equal(h.transcript().length, 1);
+  a.equal(h.transcript()[0].line, "observe the north channel shoals");
+});
+
+suite.test("a failed command is reported (ok:false), recorded, logged at warn — and never throws", function(a){
+  var h = newHarbor(); h.boot();
+  var r = h.exec("frobnicate the mainsail");
+  a.equal(r.ok, false);
+  a.ok(r.error.indexOf("unknown command") >= 0);
+  a.equal(r.message, "");
+  a.equal(h.transcript().length, 1, "the failed command is still in the transcript");
+  a.equal(h.transcript()[0].ok, false);
+  var warned = h.dashboard().activity.filter(function(e){ return e.level === "warn"; });
+  a.ok(warned.length >= 1, "the failure was logged at warn");
+});
+
+suite.test("the dashboard aggregates every engine's live state", function(a){
+  var h = newHarbor(); h.boot();
+  var oid = h.exec("observe reef").message.split(" ")[1];
+  h.exec("verify " + oid);
+  h.exec("learn tides follow the moon");
+  h.exec("project Winter routing");
+  var d = h.dashboard();
+  a.equal(d.engines.reality.verified, 1);
+  a.equal(d.engines.knowledge.established, 1);
+  a.equal(d.engines.projects.active, 1);
+  a.ok(d.ocean >= 4, "the ocean grew");
+});
+
+suite.test("the activity feed shows recent log lines, newest included", function(a){
+  var h = newHarbor(); h.boot();
+  h.exec("observe one");
+  h.exec("observe two");
+  var act = h.dashboard().activity;
+  a.ok(act.length >= 3, "boot + two commands");
+  a.ok(act[act.length - 1].message.indexOf("observe two") >= 0, "newest command is last");
+  act.forEach(function(e){ a.ok(["debug","info","warn","error"].indexOf(e.level) >= 0, "each line has a level"); });
+});
+
+suite.test("resources() lists navigable destinations with hrefs", function(a){
+  var res = newHarbor().resources();
+  a.ok(res.length >= 3);
+  var labels = res.map(function(r){ return r.label; });
+  a.ok(labels.indexOf("Charter") >= 0 && labels.indexOf("Documentation") >= 0 && labels.indexOf("Continuous Verification") >= 0);
+  res.forEach(function(r){ a.ok(r.href && r.href.length > 0, r.label + " has an href"); });
+});
+
+suite.test("status() and help() summarise the app", function(a){
+  var h = newHarbor(); h.boot();
+  h.exec("observe x");
+  var s = h.status();
+  a.equal(s.booted, true);
+  a.equal(s.commands, 1);
+  a.equal(s.operations, h.api.operations().length);
+  a.ok(h.help().length >= 15, "help reflects the CLI verbs");
+});
+
+suite.test("transcript() returns a copy — app state can't be mutated from outside", function(a){
+  var h = newHarbor(); h.boot();
+  h.exec("observe x");
+  var t = h.transcript(); t.push({ forged: true });
+  a.equal(h.transcript().length, 1);
+});
+
+suite.test("verification before acceptance still holds when driven from the Harbor", function(a){
+  var h = newHarbor(); h.boot();
+  var oid = h.exec("observe unconfirmed swell").message.split(" ")[1];
+  // ground a decision on the pending observation via the API, then try to decide through the console
+  var did = h.api.call("decision.propose", { question:"act?", options:["a","b"], grounds:[oid] }).data.id;
+  var r = h.exec("decide " + did + " a");
+  a.equal(r.ok, false); a.ok(r.error.indexOf("not verified") >= 0);
+  h.exec("verify " + oid);
+  a.equal(h.exec("decide " + did + " a").ok, true, "permitted once reality is verified");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Harbor";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>

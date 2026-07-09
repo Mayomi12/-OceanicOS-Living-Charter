@@ -179,6 +179,7 @@ suite.test("status() reports the doctrine's position", function(a){
 
 var record = suite.renderTo(document.getElementById("suite"));
 document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Build Registry Verification";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
 
 /* ---- live proof: replay the real ledger ---- */
 var realMem = OceanicCore.createMemory({ name:"real-ledger" });

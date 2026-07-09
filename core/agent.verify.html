@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — AI Agent</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .ok{color:#34d399} .no{color:#fb7185} code{color:#38bdf8}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>AI Agent</b> (build 0021, Stage 3 · Applications). The build loop made autonomous — a safe runner around a pluggable policy. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — a reactive agent verifies a backlog of observations</h2>
+<table id="trace"><tr><th>Step</th><th>Action</th><th>Params</th><th>Result</th></tr></table>
+<div class="note">The "validator" agent perceived three pending observations and verified each in turn — every action an ordinary API call, bound by the same rules a human would face, and fully recorded.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="logger.js"></script>
+<script src="agent.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newApi(){ var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "agent-test" }); os.start(); return OceanicCore.createAPI({ oceanic: os }); }
+var P = OceanicCore.createAgent.policies;
+
+var suite = OceanicCore.createVerifier({ name: "AI Agent (build 0021)" });
+
+suite.test("factory requires an API and a policy function; ships built-in policies", function(a){
+  a.equal(typeof OceanicCore.createAgent, "function");
+  a.throws(function(){ OceanicCore.createAgent({ policy: function(){} }); }, "no api");
+  a.throws(function(){ OceanicCore.createAgent({ api: newApi() }); }, "no policy");
+  a.equal(typeof P.queue, "function");
+  a.equal(typeof P.verifyAllPending, "function");
+});
+
+suite.test("a scripted (queue) agent runs its actions in order, then completes", function(a){
+  var api = newApi();
+  var agent = OceanicCore.createAgent({ api: api, name: "surveyor", policy: P.queue([
+    { op: "reality.observe", params: { observation: "north channel 3m" } },
+    { op: "reality.observe", params: { observation: "south channel 8m" } }
+  ])});
+  var r = agent.run();
+  a.equal(r.completed, true);
+  a.equal(r.steps, 2);
+  a.equal(r.failed, 0);
+  a.equal(api.call("reality.list").data.length, 2, "both observations landed");
+});
+
+suite.test("a reactive agent acts on what it perceives (verify all pending)", function(a){
+  var api = newApi();
+  api.call("reality.observe", { observation: "o1" });
+  api.call("reality.observe", { observation: "o2" });
+  api.call("reality.observe", { observation: "o3" });
+  var agent = OceanicCore.createAgent({ api: api, name: "validator", policy: P.verifyAllPending("cross-checked") });
+  var r = agent.run();
+  a.equal(r.completed, true);
+  a.equal(r.steps, 3, "one verify per pending observation");
+  a.equal(api.call("reality.list", { status: "verified" }).data.length, 3);
+  a.equal(api.call("reality.list", { status: "pending" }).data.length, 0);
+});
+
+suite.test("a failed action HALTS the run (an agent does not barrel past a refusal)", function(a){
+  var api = newApi();
+  var agent = OceanicCore.createAgent({ api: api, policy: P.queue([
+    { op: "reality.verify", params: { id: "o-nonexistent" } },   // will be refused
+    { op: "reality.observe", params: { observation: "never reached" } }
+  ])});
+  var r = agent.run();
+  a.equal(r.halted, true);
+  a.equal(r.completed, false);
+  a.equal(r.steps, 1, "the second action never ran");
+  a.equal(api.call("reality.list").data.length, 0, "nothing was created");
+});
+
+suite.test("the Charter binds the agent — it cannot commit on unverified reality", function(a){
+  var api = newApi();
+  var oid = api.call("reality.observe", { observation: "unconfirmed" }).data.id; // pending
+  var did = api.call("decision.propose", { question: "act?", options: ["a","b"], grounds: [oid] }).data.id;
+  var agent = OceanicCore.createAgent({ api: api, policy: P.queue([
+    { op: "decision.decide", params: { id: did, choice: "a" } }   // must be refused — ground not verified
+  ])});
+  var r = agent.run();
+  a.equal(r.halted, true);
+  a.ok(r.trace[0].error.indexOf("not verified") >= 0, "the API refusal bound the agent");
+});
+
+suite.test("run({ maxSteps }) is BOUNDED — a non-stopping policy still terminates", function(a){
+  var api = newApi();
+  var agent = OceanicCore.createAgent({ api: api, policy: function(){ return { op: "reality.observe", params: { observation: "tick" } }; } });
+  var r = agent.run({ maxSteps: 5 });
+  a.equal(r.reachedLimit, true);
+  a.equal(r.steps, 5, "stopped exactly at the limit");
+});
+
+suite.test("a throwing policy is caught, halts the run, and never crashes", function(a){
+  var api = newApi();
+  var agent = OceanicCore.createAgent({ api: api, policy: function(){ throw new Error("bad brain"); } });
+  var r = agent.run();
+  a.equal(r.halted, true);
+  a.ok(r.trace[0].error.indexOf("policy error") >= 0);
+});
+
+suite.test("a policy that returns no op is rejected as a bad action", function(a){
+  var api = newApi();
+  var agent = OceanicCore.createAgent({ api: api, policy: function(){ return { params: {} }; } });
+  var r = agent.run();
+  a.equal(r.halted, true);
+  a.ok(r.trace[0].error.indexOf("no op") >= 0);
+});
+
+suite.test("the run report and its trace are immutable", function(a){
+  var api = newApi();
+  var agent = OceanicCore.createAgent({ api: api, policy: P.queue([{ op: "reality.observe", params: { observation: "x" } }]) });
+  var r = agent.run();
+  a.ok(Object.isFrozen(r) && Object.isFrozen(r.trace), "report deep-frozen");
+  a.equal(r.trace[0].op, "reality.observe");
+  a.equal(r.trace[0].ok, true);
+});
+
+suite.test("perceive() offers a read-only snapshot the policy can decide from", function(a){
+  var api = newApi();
+  api.call("reality.observe", { observation: "pending one" });
+  var agent = OceanicCore.createAgent({ api: api, policy: function(){ return { done: true }; } });
+  var p = agent.perceive();
+  a.ok(p.status && typeof p.status.pulse === "number", "includes system status");
+  a.equal(p.pending.length, 1, "surfaces pending observations");
+  a.ok(Array.isArray(p.openDecisions), "surfaces open decisions");
+});
+
+suite.test("with a Logger, each step is recorded", function(a){
+  var api = newApi();
+  var log = OceanicCore.createLogger({ now: clock });
+  var levels = [];
+  log.onLog(function(e){ levels.push(e.level); });
+  OceanicCore.createAgent({ api: api, logger: log, policy: P.queue([
+    { op: "reality.observe", params: { observation: "x" } },
+    { op: "reality.verify", params: { id: "o-nope" } }
+  ])}).run();
+  a.ok(levels.indexOf("info") >= 0, "success logged");
+  a.ok(levels.indexOf("warn") >= 0, "the refusal logged at warn");
+  a.throws(function(){ OceanicCore.createAgent({ api: api, policy: function(){}, logger: {} }); }, "bad logger refused");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ AI Agent";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: a reactive agent clears a backlog ---- */
+(function(){
+  var api = newApi();
+  ["north channel shoals at low water", "south channel runs deep", "the bar shifts after storms"].forEach(function(o){
+    api.call("reality.observe", { observation: o });
+  });
+  var agent = OceanicCore.createAgent({ api: api, name: "validator", policy: P.verifyAllPending("second sounding agrees") });
+  var r = agent.run();
+  var table = document.getElementById("trace");
+  r.trace.forEach(function(e){
+    var row = table.insertRow();
+    row.insertCell().textContent = String(e.step);
+    row.insertCell().textContent = e.op;
+    row.insertCell().textContent = JSON.stringify(e.params);
+    var c = row.insertCell();
+    c.textContent = e.ok ? ("✓ " + (e.data ? e.data.status.toUpperCase() : "")) : ("✗ " + e.error);
+    c.className = e.ok ? "ok" : "no";
+  });
+})();
+</script>
+</body>
+</html>

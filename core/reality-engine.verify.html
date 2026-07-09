@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Reality Engine</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:860px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:34px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .st-pending{color:#fbbf24} .st-verified{color:#34d399} .st-rejected{color:#fb7185} .st-archived{color:#8fb3c4}
+  #exit td:first-child{color:#34d399;font-weight:bold;width:34px;text-align:center}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Reality Engine</b> (build 0007, Stage 1). Composition proof: Reality stores in <b>Memory</b> (0005), suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — an observation lived its whole life on this page</h2>
+<table id="journey"><tr><th>#</th><th>At</th><th>Observation</th><th>Status</th><th>Note</th></tr></table>
+<div class="note">One logical observation, its every state preserved by Memory. A status change is an amendment, never an erasure.</div>
+
+<h2>Build 001 Exit Criteria — demonstrated live</h2>
+<table id="exit"><tr><th>✓</th><th>Criterion</th><th>Proof</th></tr></table>
+<div class="note">These are the outstanding criteria this build closes; the rest (Repository, Charter frozen, Heartbeat, Memory, Build Registry) were met by builds 0001–0006.</div>
+
+<script src="verify-engine.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script>
+"use strict";
+var fakeTime = 1000;
+var clock = function(){ return (fakeTime += 10); };
+var nextId = 0;
+var ids = function(){ return "id-" + (++nextId); };
+var nextOid = 0;
+var oids = function(){ return "o-" + (++nextOid); };
+
+function fresh(memOpts){
+  var opts = { name:"reality-test", now:clock, idgen:ids };
+  if (memOpts) Object.keys(memOpts).forEach(function(k){ opts[k]=memOpts[k]; });
+  var mem = OceanicCore.createMemory(opts);
+  var localOid = 0;
+  var re = OceanicCore.createRealityEngine({ memory: mem, oidgen: function(){ return "o-" + (++localOid); } });
+  return { re: re, mem: mem };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Reality Engine (build 0007)" });
+
+suite.test("factory exists; a Memory instance is required — composition is explicit", function(a){
+  a.equal(typeof OceanicCore.createRealityEngine, "function");
+  a.throws(function(){ OceanicCore.createRealityEngine(); }, "no options");
+  a.throws(function(){ OceanicCore.createRealityEngine({ memory: {} }); }, "not a Memory");
+  var re = fresh().re;
+  ["observe","verify","reject","archive","setStatus","get","byStatus","observations","history","status"].forEach(function(fn){
+    a.equal(typeof re[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("observe() records the Charter's fields and is born PENDING", function(a){
+  var re = fresh().re;
+  var r = re.observe({ observation:"tide is rising", source:"buoy-7", evidence:"sensor log 42", confidence:"high" });
+  a.equal(r.body, "tide is rising", "observation stored as body");
+  a.equal(r.source, "buoy-7", "source stored");
+  a.equal(r.meta.evidence, "sensor log 42", "evidence stored");
+  a.equal(r.confidence, "high", "confidence stored");
+  a.ok(typeof r.at === "number", "timestamp stamped");
+  a.equal(r.meta.status, "pending", "birth state is pending");
+  a.ok(!!r.meta.oid, "carries a stable observation id");
+});
+
+suite.test("observe() refuses an empty or missing observation — nothing enters unnamed", function(a){
+  var re = fresh().re;
+  a.throws(function(){ re.observe(); });
+  a.throws(function(){ re.observe({}); });
+  a.throws(function(){ re.observe({ observation:"" }); });
+  a.throws(function(){ re.observe({ evidence:"only evidence" }); });
+});
+
+suite.test("confidence defaults to medium; the underlying Memory validates the scale", function(a){
+  var re = fresh().re;
+  a.equal(re.observe({ observation:"a" }).confidence, "medium", "default confidence");
+  a.throws(function(){ re.observe({ observation:"b", confidence:"absolute" }); }, "invalid confidence refused by Memory");
+});
+
+suite.test("verify() moves pending → verified via an AMENDMENT (supersession, not rewrite)", function(a){
+  var f = fresh();
+  var o = f.re.observe({ observation:"whale sighted", source:"crew" });
+  var v = f.re.verify(o.meta.oid, "photo confirmed");
+  a.equal(v.meta.status, "verified");
+  a.equal(v.meta.note, "photo confirmed", "transition note recorded");
+  a.equal(v.supersedes, o.id, "new record supersedes the original — the original is preserved");
+  a.equal(f.re.get(o.meta.oid).meta.status, "verified", "get() returns the current state");
+});
+
+suite.test("reject() and archive() reach their states", function(a){
+  var f = fresh();
+  var o1 = f.re.observe({ observation:"rumor of a reef" });
+  a.equal(f.re.reject(o1.meta.oid, "unfounded").meta.status, "rejected");
+  var o2 = f.re.observe({ observation:"old chart note" });
+  a.equal(f.re.archive(o2.meta.oid).meta.status, "archived");
+});
+
+suite.test("evidence, source and confidence are carried forward through every transition", function(a){
+  var f = fresh();
+  var o = f.re.observe({ observation:"current shifted", source:"buoy-7", evidence:"log 42", confidence:"high" });
+  f.re.verify(o.meta.oid);
+  var cur = f.re.get(o.meta.oid);
+  a.equal(cur.meta.evidence, "log 42", "evidence preserved");
+  a.equal(cur.source, "buoy-7", "source preserved");
+  a.equal(cur.confidence, "high", "confidence preserved");
+});
+
+suite.test("a no-op transition is refused honestly", function(a){
+  var f = fresh();
+  var o = f.re.observe({ observation:"x" });
+  f.re.verify(o.meta.oid);
+  a.throws(function(){ f.re.verify(o.meta.oid); }, "already verified");
+});
+
+suite.test("status may never return to PENDING — there is no un-observing", function(a){
+  var f = fresh();
+  var o = f.re.observe({ observation:"x" });
+  a.throws(function(){ f.re.setStatus(o.meta.oid, "pending"); });
+});
+
+suite.test("ARCHIVED is terminal — a closed observation refuses all further change", function(a){
+  var f = fresh();
+  var o = f.re.observe({ observation:"x" });
+  f.re.archive(o.meta.oid);
+  a.throws(function(){ f.re.verify(o.meta.oid); }, "cannot verify archived");
+  a.throws(function(){ f.re.reject(o.meta.oid); }, "cannot reject archived");
+  a.throws(function(){ f.re.archive(o.meta.oid); }, "cannot re-archive");
+});
+
+suite.test("re-examination is open: rejected → verified is legal, and preserves the whole journey", function(a){
+  var f = fresh();
+  var o = f.re.observe({ observation:"disputed sighting" });
+  f.re.reject(o.meta.oid, "unconfirmed");
+  f.re.verify(o.meta.oid, "later confirmed");
+  a.equal(f.re.get(o.meta.oid).meta.status, "verified");
+  var journey = f.re.history(o.meta.oid).map(function(r){ return r.meta.status; });
+  a.deepEqual(journey, ["pending","rejected","verified"], "every state remembered, in order");
+});
+
+suite.test("setStatus/verify on an unknown observation is refused", function(a){
+  var re = fresh().re;
+  a.throws(function(){ re.verify("o-does-not-exist"); });
+  a.throws(function(){ re.setStatus("o-does-not-exist", "verified"); });
+  a.throws(function(){ re.setStatus("o-1", "sideways"); }, "unknown target status");
+});
+
+suite.test("byStatus() and status() report only CURRENT observations", function(a){
+  var f = fresh();
+  var a1 = f.re.observe({ observation:"a" }); f.re.verify(a1.meta.oid);
+  var a2 = f.re.observe({ observation:"b" }); f.re.reject(a2.meta.oid);
+  var a3 = f.re.observe({ observation:"c" }); // stays pending
+  a.equal(f.re.byStatus("verified").length, 1, "one verified");
+  a.equal(f.re.byStatus("rejected").length, 1, "one rejected");
+  a.equal(f.re.byStatus("pending").length, 1, "one pending");
+  a.throws(function(){ f.re.byStatus("nonsense"); }, "unknown status refused");
+  a.deepEqual(f.re.status(), { total:3, pending:1, verified:1, rejected:1, archived:0 });
+});
+
+suite.test("append-only: Memory keeps every step; observations() can replay the superseded past", function(a){
+  var f = fresh();
+  var o = f.re.observe({ observation:"x" });   // 1 record
+  f.re.verify(o.meta.oid);                       // +1
+  f.re.archive(o.meta.oid);                      // +1
+  a.equal(f.mem.status().count, 3, "three records appended, none erased");
+  a.equal(f.re.observations(false).length, 1, "one current observation");
+  a.equal(f.re.observations(true).length, 3, "three when including superseded history");
+});
+
+suite.test("survives a persisted round-trip through Memory's storage adapter", function(a){
+  var data = {};
+  var store = { getItem:function(k){ return Object.prototype.hasOwnProperty.call(data,k)?data[k]:null; },
+                setItem:function(k,v){ data[k]=String(v); } };
+  var f1 = fresh({ storage: store, storageKey:"k1" });
+  var o = f1.re.observe({ observation:"persisted tide", evidence:"e" });
+  f1.re.verify(o.meta.oid, "kept");
+  // a second engine over a fresh Memory hydrated from the same storage
+  var mem2 = OceanicCore.createMemory({ name:"reality-test", now:clock, idgen:ids, storage:store, storageKey:"k1" });
+  var re2 = OceanicCore.createRealityEngine({ memory: mem2 });
+  var restored = re2.get(o.meta.oid);
+  a.ok(!!restored, "observation restored from storage");
+  a.equal(restored.meta.status, "verified", "status restored");
+  a.equal(restored.meta.evidence, "e", "evidence restored");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+suite.renderTo(document.getElementById("suite"));
+var record = suite.run();
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Reality Engine";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: one observation's whole life, shown from Memory ---- */
+(function(){
+  var f = fresh();
+  var o = f.re.observe({ observation:"the tide is rising off the harbor", source:"buoy-7", evidence:"pressure sensor log #42", confidence:"high" });
+  f.re.verify(o.meta.oid, "cross-checked against buoy-8");
+  f.re.archive(o.meta.oid, "logged to the seasonal record");
+  var table = document.getElementById("journey");
+  f.re.history(o.meta.oid).forEach(function(r, i){
+    var row = table.insertRow();
+    row.insertCell().textContent = String(i + 1);
+    row.insertCell().textContent = String(r.at);
+    row.insertCell().textContent = r.body;
+    var c = row.insertCell(); c.textContent = r.meta.status.toUpperCase(); c.className = "st-" + r.meta.status;
+    row.insertCell().textContent = r.meta.note || "—";
+  });
+})();
+
+/* ---- Build 001 Exit Criteria, proven live ---- */
+(function(){
+  var f = fresh();
+  var checks = [];
+  var o = f.re.observe({ observation:"Build 001 exit check", source:"harness", evidence:"this page" });
+  checks.push(["Reality Engine records an observation", "observe() → " + o.meta.oid + " stored, status " + o.meta.status.toUpperCase()]);
+  var before = o.meta.status;
+  var v = f.re.verify(o.meta.oid, "checked");
+  checks.push(["Verification Engine changes its status", before.toUpperCase() + " → " + v.meta.status.toUpperCase()]);
+  var persisted = f.mem.status().count === 2 && f.re.get(o.meta.oid).meta.status === "verified";
+  checks.push(["Memory persists the result", persisted ? "append-only Memory holds both states (count " + f.mem.status().count + "), current = VERIFIED" : "FAILED"]);
+  var table = document.getElementById("exit");
+  checks.forEach(function(c){
+    var row = table.insertRow();
+    row.insertCell().textContent = "✓";
+    row.insertCell().textContent = c[0];
+    row.insertCell().textContent = c[1];
+  });
+})();
+</script>
+</body>
+</html>

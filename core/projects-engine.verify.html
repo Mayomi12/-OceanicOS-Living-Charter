@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Projects Engine</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:34px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .st-active{color:#fbbf24} .st-completed{color:#34d399} .st-abandoned{color:#8fb3c4}
+  .k{color:#38bdf8}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Projects Engine</b> (build 0010, Stage 1). Composition proof: projects stored in <b>Memory</b> (0005), suite runs on the <b>Verification Engine</b> (0004). The aggregator that ties Reality (0007), Decisions (0008) and Knowledge (0009) together.</div>
+<div id="suite"></div>
+
+<h2>Live proof — one project's assembly and completion</h2>
+<table id="journey"><tr><th>#</th><th>At</th><th>Project</th><th>Status</th><th>Links gathered</th></tr></table>
+<div class="note">Threads are only ever added; the project's assembly is itself a history preserved by Memory. Once completed, it gathers no more.</div>
+
+<script src="verify-engine.js"></script>
+<script src="memory.js"></script>
+<script src="projects-engine.js"></script>
+<script>
+"use strict";
+var fakeTime = 1000;
+var clock = function(){ return (fakeTime += 10); };
+var nextId = 0;
+var ids = function(){ return "id-" + (++nextId); };
+
+function fresh(opts){
+  opts = opts || {};
+  var memOpts = { name:"p", now:clock, idgen:ids };
+  if (opts.storage){ memOpts.storage = opts.storage; memOpts.storageKey = opts.storageKey; }
+  var mem = OceanicCore.createMemory(memOpts);
+  var pp = 0;
+  var pe = OceanicCore.createProjectsEngine({ memory: mem, now: clock, pidgen:function(){ return "p-" + (++pp); } });
+  return { pe: pe, mem: mem };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Projects Engine (build 0010)" });
+
+suite.test("factory exists; a Memory instance is required; STATUS and LINK_KINDS are published", function(a){
+  a.equal(typeof OceanicCore.createProjectsEngine, "function");
+  a.throws(function(){ OceanicCore.createProjectsEngine(); });
+  a.throws(function(){ OceanicCore.createProjectsEngine({ memory: {} }); });
+  a.deepEqual(OceanicCore.createProjectsEngine.STATUS, ["active","completed","abandoned"]);
+  a.deepEqual(OceanicCore.createProjectsEngine.LINK_KINDS, ["observation","decision","knowledge","build","note"]);
+  var pe = fresh().pe;
+  ["open","link","complete","abandon","get","byStatus","links","projects","history","status"].forEach(function(fn){
+    a.equal(typeof pe[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("open() records name and goal, is born ACTIVE with no links", function(a){
+  var pe = fresh().pe;
+  var p = pe.open({ name:"Chart the North Channel", goal:"safe passage by winter", source:"harbormaster", confidence:"high" });
+  a.equal(p.body, "Chart the North Channel");
+  a.equal(p.meta.goal, "safe passage by winter");
+  a.equal(p.meta.status, "active");
+  a.deepEqual(p.meta.links, []);
+  a.ok(!!p.meta.pid, "carries a stable project id");
+});
+
+suite.test("open() demands a real name; goal is optional", function(a){
+  var pe = fresh().pe;
+  a.throws(function(){ pe.open(); });
+  a.throws(function(){ pe.open({ goal:"g" }); }, "no name");
+  a.equal(pe.open({ name:"Just a name" }).meta.goal, null, "goal optional");
+});
+
+suite.test("link() gathers each of the five thread kinds", function(a){
+  var f = fresh();
+  var p = f.pe.open({ name:"Winter passage" });
+  var pid = p.meta.pid;
+  f.pe.link(pid, { kind:"observation", id:"o-1" });
+  f.pe.link(pid, { kind:"decision", id:"dc-1", label:"take the long way" });
+  f.pe.link(pid, { kind:"knowledge", id:"k-1" });
+  f.pe.link(pid, { kind:"build", id:"0007" });
+  var last = f.pe.link(pid, { kind:"note", id:"surveyed at low tide, all clear" });
+  var links = f.pe.links(pid);
+  a.equal(links.length, 5, "all five gathered");
+  a.deepEqual(links.map(function(l){ return l.kind; }), ["observation","decision","knowledge","build","note"]);
+  a.equal(links[1].label, "take the long way", "label kept");
+  a.equal(last.meta.links.length, 5, "the current record holds the whole set");
+});
+
+suite.test("link() validates the reference shape and kind", function(a){
+  var f = fresh();
+  var pid = f.pe.open({ name:"p" }).meta.pid;
+  a.throws(function(){ f.pe.link(pid, "nope"); }, "not an object");
+  a.throws(function(){ f.pe.link(pid, { kind:"wormhole", id:"x" }); }, "unknown kind");
+  a.throws(function(){ f.pe.link(pid, { kind:"note" }); }, "no id");
+  a.throws(function(){ f.pe.link(pid, { kind:"note", id:"" }); }, "empty id");
+});
+
+suite.test("each link is an AMENDMENT — the record grows, never rewrites", function(a){
+  var f = fresh();
+  var p = f.pe.open({ name:"p" });
+  var l1 = f.pe.link(p.meta.pid, { kind:"observation", id:"o-1" });
+  a.equal(l1.supersedes, p.id, "first link supersedes the empty project");
+  var l2 = f.pe.link(p.meta.pid, { kind:"observation", id:"o-2" });
+  a.equal(l2.supersedes, l1.id, "second link supersedes the first");
+  a.equal(f.pe.links(p.meta.pid).length, 2);
+});
+
+suite.test("complete() and abandon() close a project; both are terminal", function(a){
+  var f = fresh();
+  var p1 = f.pe.open({ name:"a" });
+  a.equal(f.pe.complete(p1.meta.pid, "done").meta.status, "completed");
+  a.throws(function(){ f.pe.complete(p1.meta.pid); }, "already completed");
+  a.throws(function(){ f.pe.abandon(p1.meta.pid); }, "cannot abandon a completed one");
+  var p2 = f.pe.open({ name:"b" });
+  a.equal(f.pe.abandon(p2.meta.pid, "funding lost").meta.status, "abandoned");
+  a.throws(function(){ f.pe.abandon(p2.meta.pid); }, "already abandoned");
+});
+
+suite.test("a closed project gathers no more threads, but keeps the ones it had", function(a){
+  var f = fresh();
+  var p = f.pe.open({ name:"p" });
+  f.pe.link(p.meta.pid, { kind:"note", id:"gathered while active" });
+  f.pe.complete(p.meta.pid);
+  a.equal(f.pe.links(p.meta.pid).length, 1, "prior links preserved after close");
+  a.throws(function(){ f.pe.link(p.meta.pid, { kind:"note", id:"too late" }); }, "closed gathers no more");
+});
+
+suite.test("acting on an unknown project is refused; byStatus rejects nonsense", function(a){
+  var f = fresh();
+  a.throws(function(){ f.pe.link("p-404", { kind:"note", id:"x" }); });
+  a.throws(function(){ f.pe.complete("p-404"); });
+  a.throws(function(){ f.pe.abandon("p-404"); });
+  a.throws(function(){ f.pe.links("p-404"); });
+  a.throws(function(){ f.pe.byStatus("weird"); });
+});
+
+suite.test("byStatus() and status() report current projects and total links", function(a){
+  var f = fresh();
+  var p1 = f.pe.open({ name:"a" }); f.pe.link(p1.meta.pid, { kind:"build", id:"0001" });
+  var p2 = f.pe.open({ name:"b" }); f.pe.complete(p2.meta.pid);
+  f.pe.open({ name:"c" }); // active
+  a.equal(f.pe.byStatus("active").length, 2);
+  a.equal(f.pe.byStatus("completed").length, 1);
+  a.deepEqual(f.pe.status(), { total:3, active:2, completed:1, abandoned:0, links:1 });
+});
+
+suite.test("append-only: Memory keeps every step; history() replays the assembly", function(a){
+  var f = fresh();
+  var p = f.pe.open({ name:"Tidal atlas" });
+  f.pe.link(p.meta.pid, { kind:"observation", id:"o-9" });
+  f.pe.link(p.meta.pid, { kind:"knowledge", id:"k-3" });
+  f.pe.complete(p.meta.pid, "published");
+  a.equal(f.pe.projects(false).length, 1, "one current project");
+  a.deepEqual(
+    f.pe.history(p.meta.pid).map(function(r){ return r.meta.status + "(" + r.meta.links.length + ")"; }),
+    ["active(0)", "active(1)", "active(2)", "completed(2)"],
+    "empty → gathering → gathering → closed, each step preserved");
+});
+
+suite.test("links() returns a copy — the internal record cannot be mutated from outside", function(a){
+  var f = fresh();
+  var p = f.pe.open({ name:"p" });
+  f.pe.link(p.meta.pid, { kind:"note", id:"one" });
+  var copy = f.pe.links(p.meta.pid);
+  copy.push({ kind:"note", id:"forged" });
+  a.equal(f.pe.links(p.meta.pid).length, 1, "forged entry did not take");
+});
+
+suite.test("survives a persisted round-trip through Memory's storage adapter", function(a){
+  var data = {};
+  var store = { getItem:function(k){ return Object.prototype.hasOwnProperty.call(data,k)?data[k]:null; },
+                setItem:function(k,v){ data[k]=String(v); } };
+  var f = fresh({ storage: store, storageKey:"pk" });
+  var p = f.pe.open({ name:"persisted voyage", goal:"reach the far shore" });
+  f.pe.link(p.meta.pid, { kind:"build", id:"0010" });
+  f.pe.complete(p.meta.pid, "arrived");
+  var mem2 = OceanicCore.createMemory({ name:"p", now:clock, idgen:ids, storage:store, storageKey:"pk" });
+  var pe2 = OceanicCore.createProjectsEngine({ memory: mem2 });
+  var restored = pe2.get(p.meta.pid);
+  a.ok(!!restored, "project restored from storage");
+  a.equal(restored.meta.status, "completed");
+  a.equal(restored.meta.goal, "reach the far shore");
+  a.equal(pe2.links(p.meta.pid).length, 1, "links restored");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+suite.renderTo(document.getElementById("suite"));
+var record = suite.run();
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Projects Engine";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: a project's assembly and completion ---- */
+(function(){
+  var f = fresh();
+  var p = f.pe.open({ name:"Chart the North Channel", goal:"safe winter passage" });
+  f.pe.link(p.meta.pid, { kind:"observation", id:"o-1", label:"reef sighted" });
+  f.pe.link(p.meta.pid, { kind:"decision", id:"dc-1", label:"take the long way" });
+  f.pe.link(p.meta.pid, { kind:"knowledge", id:"k-1", label:"semidiurnal harbor" });
+  f.pe.complete(p.meta.pid, "charted; ships rerouted safely");
+  var table = document.getElementById("journey");
+  f.pe.history(p.meta.pid).forEach(function(r, i){
+    var row = table.insertRow();
+    row.insertCell().textContent = String(i + 1);
+    row.insertCell().textContent = String(r.at);
+    row.insertCell().textContent = r.body;
+    var c = row.insertCell(); c.textContent = r.meta.status.toUpperCase(); c.className = "st-" + r.meta.status;
+    row.insertCell().textContent = r.meta.links.map(function(l){ return l.kind + ":" + l.id; }).join("  ·  ") || "—";
+  });
+})();
+</script>
+</body>
+</html>

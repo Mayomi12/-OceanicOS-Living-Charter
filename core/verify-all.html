@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Continuous Verification — All Core</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:820px;margin:auto}
+  h1{font-size:18px} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:18px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold} .run{color:#fbbf24}
+  td.num{text-align:right;color:#8fb3c4}
+  #verdict{margin-top:22px;font-size:16px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:10px;font-style:italic}
+  iframe{position:absolute;width:1px;height:1px;left:-9999px;top:-9999px;border:0}
+  #progress{margin-top:10px;color:#8fb3c4;font-size:13px}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Continuous Verification</h1>
+<div class="sub">Build 0013, Stage 2 · Builder. Runs <b>every</b> capability's verification suite in turn and reports one verdict. This page is the whole project's single green light.</div>
+<div id="progress">starting…</div>
+<table id="results"><tr><th>#</th><th>Build</th><th>Capability suite</th><th class="num">Pass</th><th class="num">Fail</th><th>Result</th></tr></table>
+<div id="verdict" class="run">running…</div>
+<div class="note">Each suite runs in isolation (its own document) and reports its verdict back by message. A suite that fails to report at all is counted as a failure — silence is not success.</div>
+
+<iframe id="frame" sandbox="allow-scripts allow-same-origin"></iframe>
+
+<script>
+"use strict";
+// The catalogue of every verified capability, in build order.
+var MANIFEST = [
+  { build: "0003", file: "verify.html",                    label: "Heartbeat" },
+  { build: "0004", file: "verify-engine.verify.html",      label: "Verification Engine" },
+  { build: "0005", file: "memory.verify.html",             label: "Memory" },
+  { build: "0006", file: "build-registry.verify.html",     label: "Build Registry" },
+  { build: "0007", file: "reality-engine.verify.html",     label: "Reality Engine" },
+  { build: "0008", file: "decision-engine.verify.html",    label: "Decision Engine" },
+  { build: "0009", file: "knowledge-engine.verify.html",   label: "Knowledge Engine" },
+  { build: "0010", file: "projects-engine.verify.html",    label: "Projects Engine" },
+  { build: "0011", file: "oceanic.verify.html",            label: "OceanicOS Kernel" },
+  { build: "0012", file: "cli.verify.html",                label: "OceanicOS CLI" },
+  { build: "0014", file: "logger.verify.html",             label: "Logger" },
+  { build: "0015", file: "versioning.verify.html",         label: "Versioning" },
+  { build: "0016", file: "automation.verify.html",         label: "Automation" },
+  { build: "0017", file: "api.verify.html",                label: "API" },
+  { build: "0018", file: "docs.verify.html",               label: "Documentation" },
+  { build: "0019", file: "harbor.verify.html",             label: "Harbor" },
+  { build: "0020", file: "sdk.verify.html",                label: "Developer SDK" },
+  { build: "0021", file: "agent.verify.html",              label: "AI Agent" }
+];
+var PER_SUITE_TIMEOUT = 8000;
+
+var frame = document.getElementById("frame");
+var table = document.getElementById("results");
+var results = [];
+var idx = 0;
+var resolved = false;
+var timer = null;
+var onResult = null;
+
+window.addEventListener("message", function (e) {
+  if (e.data && e.data.oceanicVerify && typeof onResult === "function") onResult(e.data.oceanicVerify);
+});
+
+function loadNext() {
+  if (idx >= MANIFEST.length) return finish();
+  var m = MANIFEST[idx];
+  document.getElementById("progress").textContent =
+    "running suite " + (idx + 1) + " of " + MANIFEST.length + " — " + m.label + " (" + m.build + ")…";
+  resolved = false;
+  onResult = function (data) {
+    if (resolved) return;
+    resolved = true;
+    clearTimeout(timer);
+    record({ build: m.build, label: m.label, verdict: data.verdict, passed: data.passed, failed: data.failed, total: data.total });
+    idx += 1;
+    loadNext();
+  };
+  timer = setTimeout(function () {
+    if (resolved) return;
+    resolved = true;
+    record({ build: m.build, label: m.label, verdict: "FAIL", passed: 0, failed: 0, total: 0, note: "no result reported (load error or timeout)" });
+    idx += 1;
+    loadNext();
+  }, PER_SUITE_TIMEOUT);
+  frame.src = m.file; // each suite is a distinct file loaded once — no cache-bust needed (and a ?query can break file:// loads)
+}
+
+function record(r) {
+  results.push(r);
+  var row = table.insertRow();
+  row.insertCell().textContent = String(results.length);
+  row.insertCell().textContent = r.build;
+  row.insertCell().textContent = r.label + (r.note ? "  — " + r.note : "");
+  var pc = row.insertCell(); pc.className = "num"; pc.textContent = r.passed || 0;
+  var fc = row.insertCell(); fc.className = "num"; fc.textContent = r.failed || 0;
+  var c = row.insertCell();
+  var ok = r.verdict === "PASS";
+  c.textContent = ok ? "PASS" : "FAIL";
+  c.className = ok ? "pass" : "fail";
+}
+
+function finish() {
+  document.getElementById("progress").textContent = "done — " + results.length + " suites run.";
+  var suitesFailed = results.filter(function (r) { return r.verdict !== "PASS"; }).length;
+  var totalPass = results.reduce(function (n, r) { return n + (r.passed || 0); }, 0);
+  var totalFail = results.reduce(function (n, r) { return n + (r.failed || 0); }, 0);
+  var allGreen = suitesFailed === 0 && results.length === MANIFEST.length;
+  var v = document.getElementById("verdict");
+  v.className = allGreen ? "pass" : "fail";
+  v.textContent = allGreen
+    ? "✅ ALL " + results.length + " SUITES PASS — " + totalPass + " assertions, 0 failures. The whole system is verified."
+    : "❌ " + suitesFailed + " of " + results.length + " SUITES FAILED (" + totalFail + " failing assertions). Release forbidden.";
+  document.title = (allGreen ? "✅" : "❌") + " Ω∞ Continuous Verification";
+  // this aggregator is itself a suite — report upward so it can be nested/driven
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ oceanicVerify: { name: "Continuous Verification (build 0013)",
+        verdict: allGreen ? "PASS" : "FAIL", total: results.length,
+        passed: results.length - suitesFailed, failed: suitesFailed } }, "*");
+    }
+  } catch (e) {}
+}
+
+loadNext();
+</script>
+</body>
+</html>
