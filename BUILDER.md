@@ -52,7 +52,7 @@ Observe. Verify. Build **one** capability. Test. Record. Release. Continue.
 | Stage | Status | Frozen / released as |
 |-------|--------|------------------------|
 | 0 — Foundation | ✅ COMPLETE | `charter-v1.0.0` tag · Core heartbeat `core/` |
-| 1 — Core | 🔨 IN PROGRESS (2/8) | Verification Engine ✅ (build 0004) · Memory ✅ (`core/memory.js`, build 0005) |
+| 1 — Core | 🔨 IN PROGRESS (3/8) | Verification Engine ✅ (0004) · Memory ✅ (0005) · Build Registry ✅ (`core/build-registry.js`, 0006) |
 | 2–8 | 🌊 open water | — |
 
 See [BUILD_LOG.md](BUILD_LOG.md) for every verified capability.

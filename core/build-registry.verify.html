@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Build Registry</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:820px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:34px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Build Registry</b> (build 0006, Stage 1). Composition proof: Registry stores in <b>Memory</b> (0005), suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — the real ledger, replayed through the Registry itself</h2>
+<table id="ledger"><tr><th>#</th><th>Stage</th><th>Capability</th><th>Verification</th><th>Release</th></tr></table>
+<div class="note">Six real builds, recorded by the capability they culminate in. The Registry refused any attempt to record them out of order.</div>
+
+<script src="verify-engine.js"></script>
+<script src="memory.js"></script>
+<script src="build-registry.js"></script>
+<script>
+"use strict";
+var fakeTime = 1000;
+var clock = function(){ return (fakeTime += 10); };
+var nextId = 0;
+var ids = function(){ return "id-" + (++nextId); };
+function freshRegistry(memOpts){
+  var opts = { name:"reg-test", now:clock, idgen:ids };
+  if (memOpts) Object.keys(memOpts).forEach(function(k){ opts[k]=memOpts[k]; });
+  var mem = OceanicCore.createMemory(opts);
+  return { reg: OceanicCore.createBuildRegistry({ memory: mem }), mem: mem };
+}
+function build(n, over){
+  var b = { number:n, stage:1, capability:"cap "+n, verification:"verify page "+n, release:"commit-"+n };
+  if (over) Object.keys(over).forEach(function(k){ b[k]=over[k]; });
+  return b;
+}
+function fakeStorage(){
+  var data = {};
+  return {
+    getItem: function(k){ return Object.prototype.hasOwnProperty.call(data,k) ? data[k] : null; },
+    setItem: function(k,v){ data[k]=String(v); }
+  };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Build Registry (build 0006)" });
+
+suite.test("factory exists; a Memory instance is required — composition is explicit", function(a){
+  a.equal(typeof OceanicCore.createBuildRegistry, "function");
+  a.throws(function(){ OceanicCore.createBuildRegistry(); }, "no options");
+  a.throws(function(){ OceanicCore.createBuildRegistry({ memory: {} }); }, "not a Memory");
+  var r = freshRegistry().reg;
+  ["record","amend","latest","next","history","byStage","status"].forEach(function(fn){
+    a.equal(typeof r[fn], "function", "api has " + fn);
+  });
+});
+
+suite.test("no delete exists on the ledger", function(a){
+  var r = freshRegistry().reg;
+  a.equal(typeof r.delete, "undefined");
+  a.equal(typeof r.clear, "undefined");
+});
+
+suite.test("empty registry: next() is 1, latest() is null", function(a){
+  var r = freshRegistry().reg;
+  a.equal(r.next(), 1);
+  a.equal(r.latest(), null);
+  a.equal(r.status().builds, 0);
+});
+
+suite.test("record() stores a build with full doctrine fields", function(a){
+  var r = freshRegistry().reg;
+  var rec = r.record(build(1, { capability:"Heartbeat", stage:0 }));
+  a.equal(rec.type, "build");
+  a.equal(rec.meta.number, 1);
+  a.equal(rec.meta.stage, 0);
+  a.equal(rec.meta.capability, "Heartbeat");
+  a.ok(rec.meta.verification, "verification stated");
+  a.equal(rec.source, rec.meta.release, "release doubles as provenance source");
+});
+
+suite.test("ONE AT A TIME: skipping ahead is refused", function(a){
+  var r = freshRegistry().reg;
+  r.record(build(1));
+  a.throws(function(){ r.record(build(3)); }, "skipped 2");
+  a.equal(r.status().builds, 1, "refused build not recorded");
+});
+
+suite.test("ONE AT A TIME: duplicate numbers are refused", function(a){
+  var r = freshRegistry().reg;
+  r.record(build(1));
+  a.throws(function(){ r.record(build(1)); }, "duplicate 1");
+  a.equal(r.next(), 2);
+});
+
+suite.test("an unverified build cannot enter the ledger", function(a){
+  var r = freshRegistry().reg;
+  a.throws(function(){ r.record(build(1, { verification:"" })); }, "empty verification");
+  a.throws(function(){ r.record(build(1, { release:"" })); }, "empty release");
+  a.throws(function(){ r.record(build(1, { capability:"" })); }, "empty capability");
+  a.throws(function(){ r.record(build(1, { stage:9 })); }, "stage out of range");
+});
+
+suite.test("history() is ordered by build number; byStage() filters", function(a){
+  var r = freshRegistry().reg;
+  r.record(build(1, { stage:0 }));
+  r.record(build(2, { stage:0 }));
+  r.record(build(3, { stage:1 }));
+  var h = r.history();
+  a.equal(h.length, 3);
+  a.ok(h[0].meta.number < h[1].meta.number && h[1].meta.number < h[2].meta.number);
+  a.equal(r.byStage(0).length, 2);
+  a.equal(r.byStage(1).length, 1);
+});
+
+suite.test("latest() means highest number — not most recently appended", function(a){
+  var r = freshRegistry().reg;
+  r.record(build(1));
+  r.record(build(2));
+  r.record(build(3));
+  r.amend(1, { capability:"cap 1 (corrected)" }); // appended last in timeline
+  a.equal(r.latest().meta.number, 3, "an old build's correction is not the latest build");
+});
+
+suite.test("amend corrects openly via Memory — original preserved, number kept", function(a){
+  var fr = freshRegistry();
+  fr.reg.record(build(1, { release:"wrong-hash" }));
+  var fixed = fr.reg.amend(1, { release:"right-hash" });
+  a.equal(fixed.meta.number, 1, "number never changes");
+  a.equal(fixed.meta.release, "right-hash");
+  a.ok(fixed.supersedes, "declares what it supersedes");
+  a.equal(fr.mem.status().superseded, 1, "original superseded, not erased");
+  a.equal(fr.mem.timeline().length, 2, "both records in the timeline");
+  a.equal(fr.reg.history().length, 1, "ledger shows one current build 1");
+});
+
+suite.test("amend refuses unknown build numbers", function(a){
+  var r = freshRegistry().reg;
+  r.record(build(1));
+  a.throws(function(){ r.amend(7, { capability:"ghost" }); });
+});
+
+suite.test("numbers only move forward: after an amend, next() is unchanged", function(a){
+  var r = freshRegistry().reg;
+  r.record(build(1));
+  r.record(build(2));
+  r.amend(1, { capability:"x" });
+  a.equal(r.next(), 3);
+});
+
+suite.test("the ledger survives persistence — rebuilt from Memory's storage", function(a){
+  var store = fakeStorage();
+  var fr1 = freshRegistry({ storage: store, storageKey: "ledger" });
+  fr1.reg.record(build(1, { capability:"Heartbeat" }));
+  fr1.reg.record(build(2, { capability:"Verification Engine" }));
+  var fr2 = freshRegistry({ storage: store, storageKey: "ledger" });
+  a.equal(fr2.reg.status().builds, 2, "hydrated");
+  a.equal(fr2.reg.next(), 3, "sequence position survives reload");
+  a.equal(fr2.reg.latest().meta.capability, "Verification Engine");
+});
+
+suite.test("status() reports the doctrine's position", function(a){
+  var r = freshRegistry().reg;
+  r.record(build(1, { stage:0 }));
+  r.record(build(2, { stage:1 }));
+  var s = r.status();
+  a.equal(s.builds, 2);
+  a.equal(s.latestNumber, 2);
+  a.equal(s.nextNumber, 3);
+  a.deepEqual(s.perStage, { "0":1, "1":1 });
+});
+
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Build Registry Verification";
+
+/* ---- live proof: replay the real ledger ---- */
+var realMem = OceanicCore.createMemory({ name:"real-ledger" });
+var real = OceanicCore.createBuildRegistry({ memory: realMem });
+[
+  { number:1, stage:0, capability:"Living Charter frozen", verification:"git tag on ratified commit 40751e4", release:"charter-v1.0.0" },
+  { number:2, stage:0, capability:"Repository established", verification:"doctrine + log resident on main", release:"632c231" },
+  { number:3, stage:0, capability:"Core: Heartbeat", verification:"core/verify.html — 12 assertions PASS", release:"632c231" },
+  { number:4, stage:1, capability:"Core: Verification Engine", verification:"core/verify-engine.verify.html — 14 bootstrap assertions PASS", release:"89fc5f7" },
+  { number:5, stage:1, capability:"Core: Memory", verification:"core/memory.verify.html — 15 tests on the Engine PASS", release:"f244ba5" },
+  { number:6, stage:1, capability:"Core: Build Registry", verification:"core/build-registry.verify.html — this page", release:"pending commit" }
+].forEach(function(b){ real.record(b); });
+
+var ledger = document.getElementById("ledger");
+real.history().forEach(function(b){
+  var row = ledger.insertRow();
+  row.insertCell().textContent = String(b.meta.number).padStart(4,"0");
+  row.insertCell().textContent = String(b.meta.stage);
+  row.insertCell().textContent = b.meta.capability;
+  row.insertCell().textContent = b.meta.verification;
+  row.insertCell().textContent = b.meta.release;
+});
+</script>
+</body>
+</html>
