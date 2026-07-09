@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Heartbeat</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:760px;margin:auto}
+  h1{font-size:18px} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:18px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  #verdict{margin-top:20px;font-size:16px;font-weight:bold}
+  .live{margin-top:26px;color:#8fb3c4;font-size:13px}
+  #pulse{color:#38bdf8;font-weight:bold}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Heartbeat</b> (build 0003, Stage 0). Zero-runtime — this page IS the test harness.</div>
+<table id="results"><tr><th>#</th><th>Assertion</th><th>Result</th></tr></table>
+<div id="verdict">running…</div>
+<div class="live">Live proof — a real heartbeat started on this page: pulse <span id="pulse">0</span></div>
+
+<script src="heartbeat.js"></script>
+<script>
+"use strict";
+var results = [];
+function t(name, fn){
+  try { var ok = fn() === true; results.push({name:name, ok:ok, err:null}); }
+  catch(e){ results.push({name:name, ok:false, err:String(e)}); }
+}
+
+/* deterministic clock for testable time */
+var fakeTime = 1000;
+var clock = function(){ return fakeTime; };
+var hb = OceanicCore.createHeartbeat({ now: clock, historyLimit: 3 });
+
+t("factory exists and returns an object", function(){ return typeof OceanicCore.createHeartbeat === "function" && typeof hb === "object"; });
+t("newborn heart: pulse 0, not alive, no last beat", function(){ var s=hb.status(); return s.pulse===0 && s.alive===false && s.lastBeatAt===null; });
+t("beat() increments pulse and stamps injected clock time", function(){ fakeTime=2000; var e=hb.beat(); return e.pulse===1 && e.at===2000 && hb.status().pulse===1; });
+t("beat() carries meta payload", function(){ var e=hb.beat({why:"test"}); return e.meta && e.meta.why==="test"; });
+t("onBeat listener receives the event", function(){
+  var got=null; var off=hb.onBeat(function(e){ got=e; });
+  var e=hb.beat(); off();
+  return got!==null && got.pulse===e.pulse;
+});
+t("unsubscribe stops delivery", function(){
+  var n=0; var off=hb.onBeat(function(){ n++; });
+  hb.beat(); off(); hb.beat();
+  return n===1;
+});
+t("a throwing listener never stops the heart", function(){
+  var off=hb.onBeat(function(){ throw new Error("bad listener"); });
+  var before=hb.status().pulse; hb.beat(); off();
+  return hb.status().pulse===before+1;
+});
+t("history is bounded by historyLimit and keeps newest", function(){
+  var h=hb.history(); var s=hb.status();
+  return h.length<=3 && s.historyLimit===3 && h[h.length-1].pulse===s.pulse;
+});
+t("history() returns a copy, not the internal array", function(){
+  var h=hb.history(); h.push({fake:true});
+  return hb.history().length<=3;
+});
+t("start() flips alive; second start() refuses (no double heart)", function(){
+  var real=OceanicCore.createHeartbeat({intervalMs:60000});
+  var a=real.start(); var b=real.start(); var alive=real.status().alive; real.stop();
+  return a===true && b===false && alive===true;
+});
+t("stop() flips alive off; second stop() refuses", function(){
+  var real=OceanicCore.createHeartbeat({intervalMs:60000});
+  real.start(); var a=real.stop(); var b=real.stop();
+  return a===true && b===false && real.status().alive===false;
+});
+t("onBeat rejects non-functions honestly", function(){
+  try { hb.onBeat("not a function"); return false; } catch(e){ return true; }
+});
+
+/* render */
+var table=document.getElementById("results"); var allPass=true;
+results.forEach(function(r,i){
+  if(!r.ok) allPass=false;
+  var row=table.insertRow();
+  row.insertCell().textContent=String(i+1).padStart(2,"0");
+  row.insertCell().textContent=r.name + (r.err? "  ["+r.err+"]" : "");
+  var c=row.insertCell(); c.textContent=r.ok?"PASS":"FAIL"; c.className=r.ok?"pass":"fail";
+});
+var v=document.getElementById("verdict");
+v.textContent = allPass ? "✅ ALL " + results.length + " ASSERTIONS PASS — capability verified. Release permitted."
+                        : "❌ FAILURES PRESENT — capability NOT verified. Release forbidden.";
+v.className = allPass ? "pass" : "fail";
+document.title = (allPass?"✅":"❌") + " Ω∞ Core Verification";
+
+/* live heartbeat as visible proof */
+var live=OceanicCore.createHeartbeat({intervalMs:1000});
+live.onBeat(function(e){ document.getElementById("pulse").textContent=e.pulse; });
+live.start();
+</script>
+</body>
+</html>
