@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Developer SDK</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  pre{background:#061a26;border:1px solid #12455f;border-radius:6px;padding:12px;font-size:12px;overflow:auto}
+  .k{color:#38bdf8}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Developer SDK</b> (build 0020, Stage 3 · Applications). One call — <code>OceanicOS.create()</code> — assembles the whole system. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — the front door in five lines</h2>
+<pre id="demo">running…</pre>
+<div class="note">This ran on load using only the public <code class="k">OceanicOS</code> namespace — no reach into internal <code>OceanicCore</code> parts.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="cli.js"></script>
+<script src="logger.js"></script>
+<script src="docs.js"></script>
+<script src="versioning.js"></script>
+<script src="sdk.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newSDK(){ return OceanicCore.createSDK({ now: clock, manual: true, name: "sdk-test" }); }
+
+var suite = OceanicCore.createVerifier({ name: "Developer SDK (build 0020)" });
+
+suite.test("the public OceanicOS namespace exists with create() and a version", function(a){
+  a.ok(typeof OceanicOS === "object" && OceanicOS !== null, "OceanicOS global present");
+  a.equal(typeof OceanicOS.create, "function");
+  a.equal(OceanicOS.version, OceanicCore.createSDK.VERSION, "product namespace reports the SDK version");
+});
+
+suite.test("create() returns a frozen handle with every piece wired in", function(a){
+  var os = newSDK();
+  ["system","api","cli","logger","docs","versioning"].forEach(function(k){
+    a.ok(os[k] && typeof os[k] === "object", "handle exposes " + k);
+  });
+  ["start","status","describe","capabilities","operations","toMarkdown"].forEach(function(fn){
+    a.equal(typeof os[fn], "function", "handle exposes " + fn);
+  });
+  a.ok(Object.isFrozen(os), "the developer handle is frozen");
+});
+
+suite.test("missing dependency factories are refused with a clear message", function(a){
+  a.throws(function(){ OceanicCore.createSDK({ deps: {} }); });
+});
+
+suite.test("everything is wired to ONE Memory Ocean", function(a){
+  var os = newSDK();
+  os.start();
+  os.api.call("reality.observe", { observation: "the tide is rising", source: "sdk" });
+  var st = os.cli.exec("status");
+  a.ok(st.message.indexOf("ocean 1 records") >= 0, "an API write is visible to a CLI read");
+  a.equal(os.status().memory.count, 1);
+});
+
+suite.test("start() boots the system through the SDK", function(a){
+  var os = newSDK();
+  var b = os.start();
+  a.equal(b.pulse, 1);
+  a.equal(os.status().booted, true);
+});
+
+suite.test("describe() self-describes the whole system (SDK + API + capabilities)", function(a){
+  var os = newSDK();
+  var d = os.describe();
+  a.equal(d.sdk, os.version);
+  a.equal(d.system, os.system.version);
+  a.equal(d.api.operations.length, os.operations().length, "API contract included");
+  a.equal(d.capabilities.length, os.capabilities().length, "capability index included");
+  a.ok(d.capabilities.length >= 16);
+});
+
+suite.test("the SDK bundles the Versioning utility, and its own version is valid semver", function(a){
+  var os = newSDK();
+  a.ok(os.versioning && typeof os.versioning.valid === "function");
+  a.equal(os.versioning.valid(os.version), true, "SDK version parses as semver");
+  a.equal(os.versioning.valid(os.system.version), true, "system version too");
+});
+
+suite.test("toMarkdown() and operations() flow through from docs and api", function(a){
+  var os = newSDK();
+  a.ok(os.toMarkdown().indexOf("# Ω∞ OceanicOS") >= 0, "generated markdown");
+  a.deepEqual(os.operations(), os.api.operations(), "operations() mirrors the API");
+});
+
+suite.test("two SDK instances are independent systems", function(a){
+  var a1 = newSDK(); var b1 = newSDK();
+  a1.start(); a1.api.call("reality.observe", { observation: "only in a" });
+  a.equal(a1.status().memory.count, 1);
+  a.equal(b1.status().memory.count, 0, "b is untouched");
+});
+
+suite.test("verification before acceptance holds through the SDK's own API", function(a){
+  var os = newSDK(); os.start();
+  var oid = os.api.call("reality.observe", { observation: "unconfirmed" }).data.id;
+  var did = os.api.call("decision.propose", { question: "act?", options: ["a","b"], grounds: [oid] }).data.id;
+  a.equal(os.api.call("decision.decide", { id: did, choice: "a" }).ok, false, "refused on pending ground");
+  os.api.call("reality.verify", { id: oid });
+  a.equal(os.api.call("decision.decide", { id: did, choice: "a" }).ok, true, "permitted once verified");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Developer SDK";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: the front door, using only OceanicOS ---- */
+(function(){
+  var lines = [];
+  var os = OceanicOS.create({ now: clock, manual: true, name: "front-door" });
+  lines.push("var os = OceanicOS.create();            // SDK v" + os.version + ", system v" + os.system.version);
+  os.start();
+  lines.push("os.start();                             // pulse " + os.status().pulse);
+  var oid = os.api.call("reality.observe", { observation: "the tide is rising off the harbor" }).data.id;
+  lines.push('os.api.call("reality.observe", {...});   // ' + oid + " [PENDING]");
+  os.api.call("reality.verify", { id: oid, note: "second sounding" });
+  lines.push('os.api.call("reality.verify", {...});    // VERIFIED');
+  lines.push('os.cli.exec("status");                   // ' + os.cli.exec("status").message);
+  lines.push("os.describe();                          // " + os.describe().capabilities.length + " capabilities, " + os.operations().length + " API operations");
+  document.getElementById("demo").textContent = lines.join("\n");
+})();
+</script>
+</body>
+</html>
