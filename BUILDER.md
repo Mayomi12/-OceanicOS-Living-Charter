@@ -53,7 +53,7 @@ Observe. Verify. Build **one** capability. Test. Record. Release. Continue.
 |-------|--------|------------------------|
 | 0 — Foundation | ✅ COMPLETE | `charter-v1.0.0` tag · Core heartbeat `core/` |
 | 1 — Core | ✅ COMPLETE (8/8) | Heartbeat ✅ (0003) · Verification Engine ✅ (0004) · Memory ✅ (0005) · Build Registry ✅ (0006) · Reality Engine ✅ (0007) · Decision Engine ✅ (0008) · Knowledge Engine ✅ (0009) · Projects Engine ✅ (`core/projects-engine.js`, 0010) |
-| 2 — Builder | 🔨 IN PROGRESS (4/8) | Kernel ✅ (0011) · CLI ✅ (0012) · Continuous Verification ✅ (0013) · Logging ✅ (`core/logger.js`, 0014) · API · Automation · Documentation remain |
+| 2 — Builder | 🔨 IN PROGRESS (5/8) | Kernel ✅ (0011) · CLI ✅ (0012) · Continuous Verification ✅ (0013) · Logging ✅ (0014) · Versioning ✅ (`core/versioning.js`, 0015) · API · Automation · Documentation remain |
 | 3–8 | 🌊 open water | — |
 
 See [BUILD_LOG.md](BUILD_LOG.md) for every verified capability.
