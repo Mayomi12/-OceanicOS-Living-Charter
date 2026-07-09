@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Extensions</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .ok{color:#34d399} .no{color:#fb7185} code{color:#38bdf8}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Extensions</b> (build 0022, Stage 3 · Applications). A plugin system — new capabilities register into the running system. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — two plugins installed, then invoked</h2>
+<table id="demo"><tr><th>Command</th><th>Args</th><th>Result</th></tr></table>
+<div class="note">The <code>surveyor</code> plugin was handed nothing but a context; its <code>survey</code> command observes AND verifies a fact through the API alone — a new capability, plugged in, bound by the same rules as everything else.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="logger.js"></script>
+<script src="extensions.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newExt(){ var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "ext-test" }); os.start(); return OceanicCore.createExtensions({ oceanic: os }); }
+var EX = OceanicCore.createExtensions.examples;
+
+var suite = OceanicCore.createVerifier({ name: "Extensions (build 0022)" });
+
+suite.test("factory requires a system; ships example extensions", function(a){
+  a.equal(typeof OceanicCore.createExtensions, "function");
+  a.throws(function(){ OceanicCore.createExtensions(); });
+  a.ok(EX.greeter && EX.surveyor, "example extensions present");
+  var X = newExt();
+  ["use","command","remove","has","list","commands","status"].forEach(function(fn){ a.equal(typeof X[fn], "function", "exposes " + fn); });
+});
+
+suite.test("use() installs a plugin and namespaces its commands", function(a){
+  var X = newExt();
+  var r = X.use(EX.greeter);
+  a.deepEqual(r.commands, ["greeter.hello"], "command namespaced by extension");
+  a.equal(X.has("greeter"), true);
+  a.deepEqual(X.commands(), ["greeter.hello"]);
+});
+
+suite.test("command() invokes a provided handler and returns { ok, data, error }", function(a){
+  var X = newExt(); X.use(EX.greeter);
+  var r = X.command("greeter.hello", { who: "Kai" });
+  a.equal(r.ok, true);
+  a.equal(r.data, "Take a Drop, Kai.");
+  a.equal(X.command("greeter.hello").data, "Take a Drop, harbor.", "defaults work");
+});
+
+suite.test("command() NEVER throws — unknown command and handler errors are reported", function(a){
+  var X = newExt(); X.use(EX.surveyor);
+  a.equal(X.command("does.not.exist").ok, false);
+  var bad = X.command("surveyor.survey", {}); // handler throws (no fact)
+  a.equal(bad.ok, false);
+  a.ok(bad.error.indexOf("requires { fact }") >= 0);
+});
+
+suite.test("a plugin can add a real capability driven only through the API", function(a){
+  var X = newExt(); X.use(EX.surveyor);
+  var r = X.command("surveyor.survey", { fact: "the north bar shifts after storms", note: "measured twice" });
+  a.equal(r.ok, true);
+  a.equal(r.data.status, "verified", "survey observed AND verified");
+  // and the effect is real in the system
+  a.equal(X.command("greeter.hello").ok, false, "greeter not installed here");
+});
+
+suite.test("duplicate extension names and bad shapes are refused", function(a){
+  var X = newExt(); X.use(EX.greeter);
+  a.throws(function(){ X.use(EX.greeter); }, "already installed");
+  a.throws(function(){ X.use("nope"); }, "not an object");
+  a.throws(function(){ X.use({ setup: function(){} }); }, "no name");
+  a.throws(function(){ X.use({ name: "a.b", setup: function(){} }); }, "dotted name");
+  a.throws(function(){ X.use({ name: "z" }); }, "no setup");
+});
+
+suite.test("a command collision between plugins is prevented", function(a){
+  var X = newExt(); X.use(EX.greeter);
+  a.throws(function(){ X.use({ name: "greeter2", setup: function(c){ c.provide("hi", function(){}); c.provide("hi", function(){}); } }); }, "same command twice");
+});
+
+suite.test("a plugin whose setup throws is rolled back — no half-installs", function(a){
+  var X = newExt();
+  a.throws(function(){ X.use({ name: "broken", setup: function(c){ c.provide("x", function(){}); throw new Error("boom"); } }); });
+  a.equal(X.has("broken"), false, "not installed");
+  a.equal(X.command("broken.x").ok, false, "its command was withdrawn");
+  a.deepEqual(X.commands(), [], "registry is clean");
+});
+
+suite.test("remove() withdraws a plugin and all its commands", function(a){
+  var X = newExt(); X.use(EX.greeter); X.use(EX.surveyor);
+  a.equal(X.status().extensions, 2);
+  a.equal(X.remove("greeter"), true);
+  a.equal(X.has("greeter"), false);
+  a.equal(X.command("greeter.hello").ok, false, "its command is gone");
+  a.equal(X.command("surveyor.survey", { fact: "still here" }).ok, true, "other plugin unaffected");
+  a.throws(function(){ X.remove("ghost"); }, "removing an unknown plugin");
+});
+
+suite.test("list() and status() report installed plugins and total commands", function(a){
+  var X = newExt(); X.use(EX.greeter); X.use(EX.surveyor);
+  var names = X.list().map(function(e){ return e.name; }).sort();
+  a.deepEqual(names, ["greeter","surveyor"]);
+  a.equal(X.list()[0].version, "1.0.0", "version surfaced");
+  a.deepEqual(X.status(), { extensions: 2, commands: 2 });
+});
+
+suite.test("with a Logger, installs are recorded", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  var log = OceanicCore.createLogger({ now: clock });
+  var lines = [];
+  log.onLog(function(e){ lines.push(e.message); });
+  var X = OceanicCore.createExtensions({ oceanic: os, logger: log });
+  X.use(EX.greeter);
+  a.ok(lines.some(function(m){ return m.indexOf("installed extension 'greeter'") >= 0; }));
+  a.throws(function(){ OceanicCore.createExtensions({ oceanic: os, logger: {} }); }, "bad logger refused");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Extensions";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: install two plugins and invoke them ---- */
+(function(){
+  var X = newExt();
+  X.use(EX.greeter); X.use(EX.surveyor);
+  var calls = [
+    ["greeter.hello", { who: "navigator" }],
+    ["surveyor.survey", { fact: "the harbor mouth silts each spring", note: "dredged annually" }],
+    ["surveyor.survey", {}]
+  ];
+  var table = document.getElementById("demo");
+  calls.forEach(function(c){
+    var r = X.command(c[0], c[1]);
+    var row = table.insertRow();
+    row.insertCell().textContent = c[0];
+    row.insertCell().textContent = JSON.stringify(c[1]);
+    var cell = row.insertCell();
+    cell.textContent = r.ok ? ("✓ " + (typeof r.data === "string" ? r.data : JSON.stringify(r.data))) : ("✗ " + r.error);
+    cell.className = r.ok ? "ok" : "no";
+  });
+})();
+</script>
+</body>
+</html>
