@@ -1,1 +1,2 @@
-# -OceanicOS-Living-Charter
+/
+└── Ω∞ OceanicOS Living Charter
