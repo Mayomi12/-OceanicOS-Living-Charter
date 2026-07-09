@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Decision Engine</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:860px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:34px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .st-open{color:#fbbf24} .st-decided{color:#34d399} .st-rejected{color:#fb7185} .st-reversed{color:#8fb3c4}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Decision Engine</b> (build 0008, Stage 1). Composition proof: decisions stored in <b>Memory</b> (0005), grounded on the <b>Reality Engine</b> (0007), suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — a decision grounded in verified reality, then reversed</h2>
+<table id="journey"><tr><th>#</th><th>At</th><th>Question</th><th>Status</th><th>Choice</th><th>Note</th></tr></table>
+<div class="note">"Verification before acceptance" — the harbor could not commit this decision until the observation it rests on was VERIFIED. Every state is preserved by Memory; a reversal is remembered, not erased.</div>
+
+<script src="verify-engine.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script>
+"use strict";
+var fakeTime = 1000;
+var clock = function(){ return (fakeTime += 10); };
+var nextId = 0;
+var ids = function(){ return "id-" + (++nextId); };
+
+function fresh(opts){
+  opts = opts || {};
+  var rmem = OceanicCore.createMemory({ name:"r", now:clock, idgen:ids });
+  var ro = 0;
+  var re = OceanicCore.createRealityEngine({ memory: rmem, oidgen:function(){ return "o-" + (++ro); } });
+  var dmemOpts = { name:"d", now:clock, idgen:ids };
+  if (opts.storage){ dmemOpts.storage = opts.storage; dmemOpts.storageKey = opts.storageKey; }
+  var dmem = OceanicCore.createMemory(dmemOpts);
+  var dd = 0;
+  var de = OceanicCore.createDecisionEngine({ memory: dmem, reality: opts.ungrounded ? null : re, didgen:function(){ return "d-" + (++dd); } });
+  return { re: re, de: de, dmem: dmem };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Decision Engine (build 0008)" });
+
+suite.test("factory exists; a Memory instance is required; a bad reality is refused", function(a){
+  a.equal(typeof OceanicCore.createDecisionEngine, "function");
+  a.throws(function(){ OceanicCore.createDecisionEngine(); }, "no options");
+  a.throws(function(){ OceanicCore.createDecisionEngine({ memory: {} }); }, "not a Memory");
+  a.throws(function(){ OceanicCore.createDecisionEngine({ memory: OceanicCore.createMemory(), reality: {} }); }, "bad reality");
+  var de = fresh().de;
+  ["propose","decide","reject","reverse","get","byStatus","decisions","history","status"].forEach(function(fn){
+    a.equal(typeof de[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("propose() records the decision's fields and is born OPEN", function(a){
+  var de = fresh().de;
+  var d = de.propose({ question:"reroute the fleet?", options:["reroute","hold"], grounds:["o-1"], rationale:"safety first", source:"navigator", confidence:"high" });
+  a.equal(d.body, "reroute the fleet?");
+  a.deepEqual(d.meta.options, ["reroute","hold"]);
+  a.equal(d.meta.choice, null, "no choice until decided");
+  a.deepEqual(d.meta.grounds, ["o-1"]);
+  a.equal(d.meta.rationale, "safety first");
+  a.equal(d.meta.status, "open", "birth state is open");
+  a.ok(!!d.meta.did, "carries a stable decision id");
+});
+
+suite.test("propose() demands a real question and at least two distinct options", function(a){
+  var de = fresh().de;
+  a.throws(function(){ de.propose(); });
+  a.throws(function(){ de.propose({ options:["a","b"] }); }, "no question");
+  a.throws(function(){ de.propose({ question:"q" }); }, "no options");
+  a.throws(function(){ de.propose({ question:"q", options:["only"] }); }, "one option is not a decision");
+  a.throws(function(){ de.propose({ question:"q", options:["a",""] }); }, "empty option");
+});
+
+suite.test("VERIFICATION BEFORE ACCEPTANCE — a decision cannot be committed on an unverified observation", function(a){
+  var f = fresh();
+  f.re.observe({ observation:"reef at 12N", source:"chart" }); // o-1, stays pending
+  var d = f.de.propose({ question:"reroute?", options:["reroute","hold"], grounds:["o-1"] });
+  a.throws(function(){ f.de.decide(d.meta.did, "reroute"); }, "pending ground refused");
+  f.re.verify("o-1", "confirmed by sonar");
+  var dec = f.de.decide(d.meta.did, "reroute", "erring safe");
+  a.equal(dec.meta.status, "decided", "now permitted once reality is verified");
+  a.equal(dec.meta.choice, "reroute");
+});
+
+suite.test("a decision may only choose what was actually considered", function(a){
+  var f = fresh();
+  var d = f.de.propose({ question:"q", options:["a","b"] });
+  a.throws(function(){ f.de.decide(d.meta.did, "c"); }, "choice must be an option");
+  a.equal(f.de.decide(d.meta.did, "b").meta.choice, "b");
+});
+
+suite.test("a decision cannot rest on an unknown or rejected observation", function(a){
+  var f = fresh();
+  var d1 = f.de.propose({ question:"q1", options:["a","b"], grounds:["o-404"] });
+  a.throws(function(){ f.de.decide(d1.meta.did, "a"); }, "unknown ground");
+  f.re.observe({ observation:"rumor" }); f.re.reject("o-1", "unfounded");
+  var d2 = f.de.propose({ question:"q2", options:["a","b"], grounds:["o-1"] });
+  a.throws(function(){ f.de.decide(d2.meta.did, "a"); }, "rejected ground refused");
+});
+
+suite.test("decide() moves open → decided via an AMENDMENT (supersession, not rewrite)", function(a){
+  var f = fresh();
+  var d = f.de.propose({ question:"q", options:["a","b"] });
+  var dec = f.de.decide(d.meta.did, "a", "because");
+  a.equal(dec.supersedes, d.id, "the original open record is preserved");
+  a.equal(dec.meta.note, "because");
+  a.equal(f.de.get(d.meta.did).meta.status, "decided");
+});
+
+suite.test("reject() closes an open question; reverse() overturns a decision — both honestly", function(a){
+  var f = fresh();
+  var d1 = f.de.propose({ question:"q1", options:["a","b"] });
+  a.equal(f.de.reject(d1.meta.did, "moot").meta.status, "rejected");
+  var d2 = f.de.propose({ question:"q2", options:["a","b"] });
+  f.de.decide(d2.meta.did, "a");
+  a.equal(f.de.reverse(d2.meta.did, "new evidence").meta.status, "reversed");
+});
+
+suite.test("status may never return to OPEN; REJECTED and REVERSED are terminal", function(a){
+  var f = fresh();
+  var d = f.de.propose({ question:"q", options:["a","b"] });
+  f.de.decide(d.meta.did, "a");
+  a.throws(function(){ f.de.decide(d.meta.did, "b"); }, "already decided");
+  a.throws(function(){ f.de.reject(d.meta.did); }, "cannot reject a decided one");
+  f.de.reverse(d.meta.did);
+  a.throws(function(){ f.de.reverse(d.meta.did); }, "reversed is terminal");
+  var d2 = f.de.propose({ question:"q2", options:["a","b"] });
+  f.de.reject(d2.meta.did);
+  a.throws(function(){ f.de.decide(d2.meta.did, "a"); }, "rejected is terminal");
+  a.throws(function(){ f.de.reverse(d2.meta.did); }, "cannot reverse a rejected one");
+});
+
+suite.test("only a DECIDED decision can be reversed", function(a){
+  var f = fresh();
+  var d = f.de.propose({ question:"q", options:["a","b"] });
+  a.throws(function(){ f.de.reverse(d.meta.did); }, "cannot reverse an open decision");
+});
+
+suite.test("acting on an unknown decision is refused; byStatus rejects nonsense", function(a){
+  var f = fresh();
+  a.throws(function(){ f.de.decide("d-404", "a"); });
+  a.throws(function(){ f.de.reject("d-404"); });
+  a.throws(function(){ f.de.byStatus("nonsense"); });
+});
+
+suite.test("byStatus() and status() report only CURRENT decisions", function(a){
+  var f = fresh();
+  var d1 = f.de.propose({ question:"q1", options:["a","b"] }); f.de.decide(d1.meta.did, "a");
+  var d2 = f.de.propose({ question:"q2", options:["a","b"] }); f.de.reject(d2.meta.did);
+  f.de.propose({ question:"q3", options:["a","b"] }); // stays open
+  a.equal(f.de.byStatus("decided").length, 1);
+  a.equal(f.de.byStatus("rejected").length, 1);
+  a.equal(f.de.byStatus("open").length, 1);
+  a.deepEqual(f.de.status(), { total:3, open:1, decided:1, rejected:1, reversed:0, grounded:true });
+});
+
+suite.test("an ungrounded engine (no Reality) decides freely and reports grounded:false", function(a){
+  var f = fresh({ ungrounded:true });
+  var d = f.de.propose({ question:"q", options:["a","b"], grounds:["o-anything"] });
+  a.equal(f.de.decide(d.meta.did, "a").meta.status, "decided", "no reality to check against");
+  a.equal(f.de.status().grounded, false);
+});
+
+suite.test("append-only: Memory keeps every step; history() replays the whole life", function(a){
+  var f = fresh();
+  var d = f.de.propose({ question:"q", options:["a","b"] });
+  f.de.decide(d.meta.did, "a");
+  f.de.reverse(d.meta.did);
+  a.equal(f.dmem.status().count, 3, "three records appended, none erased");
+  a.equal(f.de.decisions(false).length, 1, "one current decision");
+  a.deepEqual(f.de.history(d.meta.did).map(function(r){ return r.meta.status; }), ["open","decided","reversed"]);
+});
+
+suite.test("survives a persisted round-trip through Memory's storage adapter", function(a){
+  var data = {};
+  var store = { getItem:function(k){ return Object.prototype.hasOwnProperty.call(data,k)?data[k]:null; },
+                setItem:function(k,v){ data[k]=String(v); } };
+  var f = fresh({ storage: store, storageKey:"dk" });
+  var d = f.de.propose({ question:"persisted?", options:["yes","no"] });
+  f.de.decide(d.meta.did, "yes", "kept");
+  var dmem2 = OceanicCore.createMemory({ name:"d", now:clock, idgen:ids, storage:store, storageKey:"dk" });
+  var de2 = OceanicCore.createDecisionEngine({ memory: dmem2 });
+  var restored = de2.get(d.meta.did);
+  a.ok(!!restored, "decision restored from storage");
+  a.equal(restored.meta.status, "decided");
+  a.equal(restored.meta.choice, "yes");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+suite.renderTo(document.getElementById("suite"));
+var record = suite.run();
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Decision Engine";
+
+/* ---- live proof: a grounded decision's whole life ---- */
+(function(){
+  var f = fresh();
+  var o = f.re.observe({ observation:"a reef lies across the north channel", source:"survey-3", evidence:"sonar sweep #7", confidence:"high" });
+  var d = f.de.propose({ question:"take the north channel or the long way round?", options:["north channel","long way round"], grounds:[o.meta.oid], rationale:"north is faster but the survey is unconfirmed" });
+  // committing is refused until the observation is verified — proven in the suite above.
+  f.re.verify(o.meta.oid, "second sweep agrees");
+  f.de.decide(d.meta.did, "long way round", "reef verified — safety over speed");
+  f.de.reverse(d.meta.did, "reef later charted as passable at high tide");
+  var table = document.getElementById("journey");
+  f.de.history(d.meta.did).forEach(function(r, i){
+    var row = table.insertRow();
+    row.insertCell().textContent = String(i + 1);
+    row.insertCell().textContent = String(r.at);
+    row.insertCell().textContent = r.body;
+    var c = row.insertCell(); c.textContent = r.meta.status.toUpperCase(); c.className = "st-" + r.meta.status;
+    row.insertCell().textContent = r.meta.choice || "—";
+    row.insertCell().textContent = r.meta.note || "—";
+  });
+})();
+</script>
+</body>
+</html>
