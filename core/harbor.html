@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ω∞ OceanicOS — Harbor</title>
+<style>
+  :root{ --bg:#04141f; --panel:#061a26; --line:#12455f; --ink:#e8f6fb; --dim:#8fb3c4;
+         --ok:#34d399; --info:#38bdf8; --warn:#fbbf24; --err:#fb7185; }
+  *{box-sizing:border-box}
+  body{font-family:Consolas,ui-monospace,monospace;background:var(--bg);color:var(--ink);margin:0;padding:0;line-height:1.5}
+  header{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;justify-content:space-between}
+  header h1{font-size:18px;margin:0}
+  header .v{color:var(--dim);font-size:12px}
+  nav{display:flex;flex-wrap:wrap;gap:14px;padding:10px 22px;border-bottom:1px solid var(--line);font-size:13px}
+  nav a{color:var(--info);text-decoration:none} nav a:hover{text-decoration:underline}
+  main{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:18px 22px;max-width:1100px;margin:auto}
+  @media(max-width:760px){ main{grid-template-columns:1fr} }
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .card h2{font-size:13px;margin:0 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .tile{background:#04141f;border:1px solid var(--line);border-radius:6px;padding:10px;text-align:center}
+  .tile .n{font-size:20px;font-weight:bold;color:var(--info)} .tile .l{font-size:11px;color:var(--dim)}
+  .engines{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+  .engine{background:#04141f;border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:12px}
+  .engine b{color:var(--ink)} .engine span{color:var(--dim)}
+  #feed{max-height:210px;overflow:auto;font-size:12px;margin:0;padding:0;list-style:none}
+  #feed li{padding:3px 0;border-bottom:1px solid #0c2c3d}
+  .lv-info{color:var(--info)} .lv-warn{color:var(--warn)} .lv-error{color:var(--err)} .lv-debug{color:var(--dim)}
+  #out{background:#04141f;border:1px solid var(--line);border-radius:6px;padding:10px;height:230px;overflow:auto;font-size:12px;white-space:pre-wrap}
+  #out .cmd{color:var(--ink)} #out .ok{color:var(--dim)} #out .err{color:var(--err)} #out .prompt{color:var(--ok)}
+  #inp{display:flex;margin-top:10px}
+  #inp span{color:var(--ok);margin-right:8px;padding-top:6px}
+  #line{flex:1;background:#04141f;border:1px solid var(--line);color:var(--ink);font-family:inherit;font-size:13px;padding:6px 8px;border-radius:4px}
+  .pulse{color:var(--ok)}
+  footer{color:var(--dim);font-size:12px;padding:14px 22px;border-top:1px solid var(--line);text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>Ω♾️V :: ƆCEANiC_OS — Harbor</h1>
+  <div class="v">app v<span id="appv">–</span> · system v<span id="sysv">–</span> · pulse <span id="pulse" class="pulse">0</span></div>
+</header>
+<nav id="nav"></nav>
+<main>
+  <section class="card">
+    <h2>Dashboard</h2>
+    <div class="tiles">
+      <div class="tile"><div class="n" id="t-ocean">0</div><div class="l">ocean records</div></div>
+      <div class="tile"><div class="n" id="t-verified">0</div><div class="l">verified</div></div>
+      <div class="tile"><div class="n" id="t-decided">0</div><div class="l">decided</div></div>
+    </div>
+    <div class="engines" id="engines"></div>
+    <h2 style="margin-top:16px">Activity</h2>
+    <ul id="feed"></ul>
+  </section>
+  <section class="card">
+    <h2>Console</h2>
+    <div id="out"></div>
+    <div id="inp"><span>oceanic&gt;</span><input id="line" autocomplete="off" spellcheck="false" placeholder="try: help · observe the tide is rising · verify &lt;id&gt; · learn ... · status" /></div>
+  </section>
+</main>
+<footer>Take a Drop. Leave a Drop. Return a Better Drop. — the whole harbor runs in your browser, zero-runtime.</footer>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="cli.js"></script>
+<script src="logger.js"></script>
+<script src="harbor.js"></script>
+<script>
+"use strict";
+var harbor = OceanicCore.createHarbor({ oceanic: OceanicCore.createOceanic({ manual: true, name: "harbor" }) });
+var out = document.getElementById("out");
+var line = document.getElementById("line");
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function writeLine(html, cls){ var d=document.createElement("div"); if(cls) d.className=cls; d.innerHTML=html; out.appendChild(d); out.scrollTop=out.scrollHeight; }
+
+function paintNav(){
+  var nav=document.getElementById("nav");
+  harbor.resources().forEach(function(r){
+    var a=document.createElement("a"); a.href=r.href; a.textContent=(r.icon?r.icon+" ":"")+r.label; nav.appendChild(a);
+  });
+}
+function paint(d){
+  document.getElementById("appv").textContent=d.version;
+  document.getElementById("sysv").textContent=d.systemVersion;
+  document.getElementById("pulse").textContent=d.pulse;
+  document.getElementById("t-ocean").textContent=d.ocean;
+  document.getElementById("t-verified").textContent=d.engines.reality.verified;
+  document.getElementById("t-decided").textContent=d.engines.decisions.decided;
+  var e=d.engines, eb=document.getElementById("engines");
+  eb.innerHTML=""+
+    engine("Reality", e.reality.verified+"✓ · "+e.reality.pending+"? · "+e.reality.total+" total")+
+    engine("Decisions", e.decisions.decided+" decided · "+e.decisions.open+" open")+
+    engine("Knowledge", e.knowledge.established+" · "+e.knowledge.topics+" topics")+
+    engine("Projects", e.projects.active+" active · "+e.projects.total+" total");
+  var feed=document.getElementById("feed"); feed.innerHTML="";
+  d.activity.slice().reverse().forEach(function(a){
+    var li=document.createElement("li"); li.className="lv-"+a.level;
+    li.textContent=a.message; feed.appendChild(li);
+  });
+}
+function engine(name, body){ return '<div class="engine"><b>'+name+'</b><br><span>'+esc(body)+'</span></div>'; }
+
+function run(text){
+  writeLine('<span class="prompt">oceanic&gt;</span> <span class="cmd">'+esc(text)+'</span>');
+  var r=harbor.exec(text);
+  if(r.ok){ if(r.message) writeLine(esc(r.message), "ok"); }
+  else writeLine("! "+esc(r.error), "err");
+  paint(r.dashboard);
+}
+
+paintNav();
+paint(harbor.boot());
+writeLine('OceanicOS Harbor ready. Type <b>help</b> to see commands.', "ok");
+line.addEventListener("keydown", function(e){
+  if(e.key==="Enter" && line.value.trim()){ run(line.value.trim()); line.value=""; }
+});
+</script>
+</body>
+</html>
