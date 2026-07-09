@@ -192,6 +192,7 @@ suite.test("a full session leaves a coherent ocean, driven entirely from text", 
 suite.renderTo(document.getElementById("suite"));
 var record = suite.run();
 document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ OceanicOS CLI";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
 
 /* ---- live interactive console ---- */
 (function(){

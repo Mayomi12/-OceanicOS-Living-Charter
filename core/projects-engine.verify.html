@@ -192,6 +192,7 @@ suite.test("survives a persisted round-trip through Memory's storage adapter", f
 suite.renderTo(document.getElementById("suite"));
 var record = suite.run();
 document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Projects Engine";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
 
 /* ---- live proof: a project's assembly and completion ---- */
 (function(){

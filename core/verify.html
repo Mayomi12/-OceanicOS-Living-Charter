@@ -90,6 +90,7 @@ v.textContent = allPass ? "✅ ALL " + results.length + " ASSERTIONS PASS — ca
                         : "❌ FAILURES PRESENT — capability NOT verified. Release forbidden.";
 v.className = allPass ? "pass" : "fail";
 document.title = (allPass?"✅":"❌") + " Ω∞ Core Verification";
+try{ if(window.parent && window.parent!==window){ var _p=0,_f=0; results.forEach(function(r){ r.ok?_p++:_f++; }); window.parent.postMessage({ oceanicVerify:{ name:"Heartbeat (build 0003)", verdict:(allPass?"PASS":"FAIL"), total:results.length, passed:_p, failed:_f } }, "*"); } }catch(e){}
 
 /* live heartbeat as visible proof */
 var live=OceanicCore.createHeartbeat({intervalMs:1000});

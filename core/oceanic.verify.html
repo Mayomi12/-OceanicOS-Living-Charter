@@ -178,6 +178,7 @@ suite.test("two systems are independent — separate oceans, separate pulses", f
 suite.renderTo(document.getElementById("suite"));
 var record = suite.run();
 document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ OceanicOS Kernel";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
 
 /* ---- live proof: oceanic start, then a full turn of the build loop ---- */
 (function(){
