@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — API</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:34px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left;vertical-align:top}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .grp{color:#38bdf8} .req{color:#fbbf24} code{color:#8fb3c4}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>API</b> (build 0017, Stage 2 · Builder). A stable, versioned, self-describing contract over the Kernel. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — the API describes itself</h2>
+<table id="manifest"><tr><th>Operation</th><th>Group</th><th>Parameters</th><th>Returns</th></tr></table>
+<div class="note">This table is generated from <code>api.describe()</code> — the same machine-readable manifest a program (or the Documentation build 0018) consumes.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script>
+"use strict";
+var fakeTime = 1000;
+var clock = function(){ return (fakeTime += 10); };
+function newAPI(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "api-test" });
+  return OceanicCore.createAPI({ oceanic: os });
+}
+
+var suite = OceanicCore.createVerifier({ name: "API (build 0017)" });
+
+suite.test("createAPI requires an assembled OceanicOS; publishes a version", function(a){
+  a.equal(typeof OceanicCore.createAPI, "function");
+  a.throws(function(){ OceanicCore.createAPI(); });
+  a.throws(function(){ OceanicCore.createAPI({ oceanic: {} }); });
+  var api = newAPI();
+  a.equal(api.version, OceanicCore.createAPI.VERSION);
+  a.ok(api.operations().length >= 15, "exposes a full operation set");
+});
+
+suite.test("call() returns { ok, data, error } and NEVER throws", function(a){
+  var api = newAPI();
+  var r = api.call("system.status");
+  a.equal(r.ok, true); a.equal(r.error, null); a.ok(r.data && r.data.version);
+  var u = api.call("does.not.exist");
+  a.equal(u.ok, false); a.ok(u.error.indexOf("unknown operation") >= 0);
+});
+
+suite.test("required parameters are validated before the engine is touched", function(a){
+  var api = newAPI();
+  var r = api.call("reality.observe", {});
+  a.equal(r.ok, false);
+  a.ok(r.error.indexOf("missing required parameter: observation") >= 0);
+});
+
+suite.test("parameter types are validated (string vs array)", function(a){
+  var api = newAPI();
+  a.equal(api.call("reality.observe", { observation: 123 }).ok, false, "string expected");
+  a.equal(api.call("decision.propose", { question: "q", options: "north" }).ok, false, "array expected");
+});
+
+suite.test("reality operations return STABLE shapes, not internal records", function(a){
+  var api = newAPI();
+  var r = api.call("reality.observe", { observation: "shoals", source: "survey", confidence: "high" });
+  a.equal(r.ok, true);
+  a.deepEqual(Object.keys(r.data).sort(), ["confidence","evidence","id","observation","source","status"]);
+  a.equal(r.data.status, "pending");
+  a.equal(r.data.observation, "shoals", "the body is exposed as 'observation', not 'body'");
+});
+
+suite.test("a full reality lifecycle through the API", function(a){
+  var api = newAPI();
+  var id = api.call("reality.observe", { observation: "x" }).data.id;
+  a.equal(api.call("reality.verify", { id: id, note: "ok" }).data.status, "verified");
+  a.equal(api.call("reality.list", { status: "verified" }).data.length, 1);
+  a.equal(api.call("reality.archive", { id: id }).data.status, "archived");
+});
+
+suite.test("engine refusals surface as { ok:false, error } (verification before acceptance)", function(a){
+  var api = newAPI();
+  var oid = api.call("reality.observe", { observation: "unconfirmed" }).data.id; // pending
+  var did = api.call("decision.propose", { question: "act?", options: ["a","b"], grounds: [oid] }).data.id;
+  var r = api.call("decision.decide", { id: did, choice: "a" });
+  a.equal(r.ok, false); a.ok(r.error.indexOf("not verified") >= 0);
+  api.call("reality.verify", { id: oid });
+  a.equal(api.call("decision.decide", { id: did, choice: "a" }).ok, true);
+});
+
+suite.test("decision, knowledge, project and builds operations shape their data", function(a){
+  var api = newAPI();
+  var oid = api.call("reality.observe", { observation: "o" }).data.id; api.call("reality.verify", { id: oid });
+  var did = api.call("decision.propose", { question: "q", options: ["a","b"], grounds: [oid] }).data;
+  a.deepEqual(did.options, ["a","b"]);
+  var kid = api.call("knowledge.learn", { statement: "k", topics: ["T"], grounds: [oid] }).data;
+  a.deepEqual(kid.topics, ["t"], "topics normalised and exposed");
+  var pid = api.call("project.open", { name: "P", goal: "g" }).data;
+  a.equal(pid.status, "active");
+  var linked = api.call("project.link", { id: pid.id, kind: "observation", ref: oid }).data;
+  a.deepEqual(linked.links, [{ kind: "observation", id: oid }], "links shaped to { kind, id }");
+});
+
+suite.test("call() rejects an unknown project link kind via the engine", function(a){
+  var api = newAPI();
+  var pid = api.call("project.open", { name: "P" }).data.id;
+  var r = api.call("project.link", { id: pid, kind: "wormhole", ref: "x" });
+  a.equal(r.ok, false);
+});
+
+suite.test("describe() returns a machine-readable manifest of every operation", function(a){
+  var api = newAPI();
+  var d = api.describe();
+  a.equal(d.version, api.version);
+  a.equal(d.operations.length, api.operations().length, "one manifest entry per operation");
+  var propose = d.operations.filter(function(o){ return o.name === "decision.propose"; })[0];
+  a.ok(propose, "decision.propose is described");
+  a.equal(propose.group, "decision");
+  a.ok(propose.summary && propose.summary.length > 0, "has a summary");
+  var required = propose.params.filter(function(p){ return p.required; }).map(function(p){ return p.name; });
+  a.deepEqual(required, ["question","options"], "required params are declared");
+});
+
+suite.test("every described operation is actually callable (contract ↔ behaviour)", function(a){
+  var api = newAPI();
+  api.describe().operations.forEach(function(op){
+    // calling with no params must never throw; it returns ok or a reported error
+    var r = api.call(op.name, {});
+    a.ok(r && typeof r.ok === "boolean" && "error" in r, op.name + " honours the { ok, error } contract");
+    a.equal(r.op, op.name, "echoes the op name");
+  });
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ API";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: render the self-description ---- */
+(function(){
+  var api = newAPI();
+  var table = document.getElementById("manifest");
+  api.describe().operations.forEach(function(op){
+    var row = table.insertRow();
+    row.insertCell().textContent = op.name;
+    var g = row.insertCell(); g.textContent = op.group; g.className = "grp";
+    var params = op.params.map(function(p){ return p.name + (p.required ? "*" : "") + ":" + p.type; }).join(", ") || "—";
+    row.insertCell().innerHTML = params.replace(/\*/g, '<span class="req">*</span>');
+    row.insertCell().textContent = op.returns;
+  });
+})();
+</script>
+</body>
+</html>
