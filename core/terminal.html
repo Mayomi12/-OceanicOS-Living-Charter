@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ω∞ OceanicOS — Terminal</title>
+<style>
+  html,body{height:100%;margin:0}
+  body{font-family:Consolas,ui-monospace,monospace;background:#020d14;color:#cfe9f2;display:flex;flex-direction:column}
+  #bar{padding:8px 14px;border-bottom:1px solid #0c2c3d;color:#8fb3c4;font-size:12px;display:flex;justify-content:space-between}
+  #bar a{color:#38bdf8;text-decoration:none;margin-left:14px}
+  #screen{flex:1;overflow:auto;padding:14px;font-size:13.5px;line-height:1.55;white-space:pre-wrap}
+  .in{color:#e8f6fb} .out{color:#9fc4d4} .err{color:#fb7185} .sys{color:#34d399}
+  #row{display:flex;padding:8px 14px;border-top:1px solid #0c2c3d;align-items:center}
+  #p{color:#34d399;margin-right:8px}
+  #line{flex:1;background:transparent;border:0;outline:0;color:#e8f6fb;font-family:inherit;font-size:13.5px}
+  #hint{color:#8fb3c4;font-size:11px;padding:0 14px 8px}
+</style>
+</head>
+<body>
+<div id="bar">
+  <span>Ω♾️V :: ƆCEANiC_OS — Terminal</span>
+  <span><a href="harbor.html">Harbor</a><a href="docs.html">Docs</a><a href="verify-all.html">Verify</a></span>
+</div>
+<div id="screen"></div>
+<div id="row"><span id="p">oceanic&gt;</span><input id="line" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus /></div>
+<div id="hint">Enter to run · ↑/↓ history · Tab to complete · try: help · start · observe … · clear</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="cli.js"></script>
+<script src="terminal.js"></script>
+<script>
+"use strict";
+var term = OceanicCore.createTerminal({ cli: OceanicCore.createCLI({ oceanic: OceanicCore.createOceanic({ manual: true, name: "terminal" }) }) });
+var screen = document.getElementById("screen");
+var line = document.getElementById("line");
+document.getElementById("p").textContent = term.prompt;
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function repaint(){
+  screen.innerHTML = term.scrollback().map(function(l){ return '<div class="'+l.type+'">'+esc(l.text)+'</div>'; }).join("");
+  screen.scrollTop = screen.scrollHeight;
+}
+function banner(){
+  screen.innerHTML = '<div class="sys">Ω∞ OceanicOS Terminal — the whole system in your browser, zero-runtime.</div>' +
+                     '<div class="out">Type <b>help</b> for commands, <b>start</b> to boot.</div>';
+}
+banner();
+
+line.addEventListener("keydown", function(e){
+  if (e.key === "Enter"){
+    var v = line.value;
+    if (v.trim()){ term.submit(v); repaint(); }
+    line.value = "";
+  } else if (e.key === "ArrowUp"){
+    e.preventDefault(); line.value = term.historyPrev();
+    setTimeout(function(){ line.selectionStart = line.selectionEnd = line.value.length; }, 0);
+  } else if (e.key === "ArrowDown"){
+    e.preventDefault(); line.value = term.historyNext();
+  } else if (e.key === "Tab"){
+    e.preventDefault();
+    var c = term.complete(line.value);
+    if (c.matches.length === 1){ line.value = c.value + " "; }
+    else if (c.matches.length > 1){
+      line.value = c.value;
+      // show the candidates as a transient hint (not recorded in the session)
+      var div = document.createElement("div"); div.className = "out"; div.textContent = c.matches.join("   ");
+      screen.appendChild(div); screen.scrollTop = screen.scrollHeight;
+    }
+  }
+});
+document.getElementById("screen").addEventListener("click", function(){ line.focus(); });
+</script>
+</body>
+</html>
