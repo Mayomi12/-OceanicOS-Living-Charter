@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Organizations</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .team{color:#34d399} .ws{color:#c084fc}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Organizations</b> (build 0039, Stage 5 · Collaboration). The umbrella over Teams + Workspaces. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — an organization and its derived roster</h2>
+<table id="org"><tr><th>Contains</th><th>Kind</th><th>Members</th></tr></table>
+<div class="note">An org owns no people directly — its roster is the union of everyone in its teams and workspaces, so membership is defined in one place and never drifts.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="identity.js"></script>
+<script src="teams.js"></script>
+<script src="workspaces.js"></script>
+<script src="organizations.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function fresh(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "org-test" });
+  var I = OceanicCore.createIdentity({ oceanic: os });
+  ["Kai","Nav","Hand","Cook"].forEach(function(n){ I.register({ name: n, role: "observer" }); });
+  var T = OceanicCore.createTeams({ oceanic: os, identity: I });
+  var W = OceanicCore.createWorkspaces({ oceanic: os, identity: I });
+  var O = OceanicCore.createOrganizations({ oceanic: os, teams: T, workspaces: W });
+  T.form({ name: "Navigators" }); T.join("navigators", "kai"); T.join("navigators", "nav");
+  T.form({ name: "Galley" }); T.join("galley", "cook");
+  W.create({ name: "Winter Routing" }); W.add("winter-routing", "hand"); W.add("winter-routing", "kai");
+  return { os: os, I: I, T: T, W: W, O: O };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Organizations (build 0039)" });
+
+suite.test("factory requires an OceanicOS/Memory; bad teams/workspaces refused", function(a){
+  a.equal(typeof OceanicCore.createOrganizations, "function");
+  a.throws(function(){ OceanicCore.createOrganizations({}); });
+  a.throws(function(){ OceanicCore.createOrganizations({ oceanic: fresh().os, teams: {} }); });
+  a.throws(function(){ OceanicCore.createOrganizations({ oceanic: fresh().os, workspaces: {} }); });
+  var O = fresh().O;
+  ["found","addTeam","addWorkspace","removeTeam","removeWorkspace","dissolve","get","has","list","teams","workspaces","members","byMember","status"].forEach(function(fn){
+    a.equal(typeof O[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("found() opens an active org with empty containers", function(a){
+  var O = fresh().O;
+  var org = O.found({ name: "Harbor Authority", purpose: "run the harbor" });
+  a.equal(org.id, "harbor-authority");
+  a.equal(org.status, "active");
+  a.deepEqual(org.teams, []);
+  a.deepEqual(org.workspaces, []);
+  a.throws(function(){ O.found({}); }, "needs a name");
+  a.throws(function(){ O.found({ name: "Harbor Authority" }); }, "duplicate id");
+});
+
+suite.test("addTeam / addWorkspace validate against Teams and Workspaces", function(a){
+  var f = fresh();
+  f.O.found({ name: "Org" });
+  f.O.addTeam("org", "navigators");
+  f.O.addWorkspace("org", "winter-routing");
+  a.deepEqual(f.O.teams("org"), ["navigators"]);
+  a.deepEqual(f.O.workspaces("org"), ["winter-routing"]);
+  a.throws(function(){ f.O.addTeam("org", "ghost-team"); }, "no such team");
+  a.throws(function(){ f.O.addWorkspace("org", "ghost-ws"); }, "no such workspace");
+});
+
+suite.test("adding the same team twice is idempotent", function(a){
+  var f = fresh();
+  f.O.found({ name: "Org" });
+  f.O.addTeam("org", "navigators");
+  f.O.addTeam("org", "navigators");
+  a.deepEqual(f.O.teams("org"), ["navigators"], "listed once");
+});
+
+suite.test("members() is the UNION of everyone in the org's teams and workspaces (deduped)", function(a){
+  var f = fresh();
+  f.O.found({ name: "Org" });
+  f.O.addTeam("org", "navigators");   // kai, nav
+  f.O.addTeam("org", "galley");        // cook
+  f.O.addWorkspace("org", "winter-routing"); // hand, kai
+  a.deepEqual(f.O.members("org").sort(), ["cook", "hand", "kai", "nav"], "kai counted once across a team and a workspace");
+});
+
+suite.test("removing a container updates the derived roster", function(a){
+  var f = fresh();
+  f.O.found({ name: "Org" });
+  f.O.addTeam("org", "navigators"); f.O.addTeam("org", "galley");
+  f.O.removeTeam("org", "galley");
+  a.deepEqual(f.O.members("org").sort(), ["kai", "nav"], "cook (only in galley) is no longer a member");
+  a.throws(function(){ f.O.removeTeam("org", "galley"); }, "not in the org");
+});
+
+suite.test("the roster reflects live team membership — no second copy to drift", function(a){
+  var f = fresh();
+  f.O.found({ name: "Org" });
+  f.O.addTeam("org", "navigators");
+  a.deepEqual(f.O.members("org").sort(), ["kai", "nav"]);
+  f.T.join("navigators", "hand");   // change the team, not the org
+  a.deepEqual(f.O.members("org").sort(), ["hand", "kai", "nav"], "the org sees it immediately");
+});
+
+suite.test("byMember() lists the orgs an actor belongs to (via any team/workspace)", function(a){
+  var f = fresh();
+  f.O.found({ name: "Harbor" }); f.O.addTeam("harbor", "navigators");
+  f.O.found({ name: "Guild" }); f.O.addTeam("guild", "galley");
+  a.deepEqual(f.O.byMember("kai").map(function(o){ return o.id; }), ["harbor"]);
+  a.deepEqual(f.O.byMember("cook").map(function(o){ return o.id; }), ["guild"]);
+  a.deepEqual(f.O.byMember("nobody"), []);
+});
+
+suite.test("dissolve() is terminal", function(a){
+  var f = fresh();
+  f.O.found({ name: "Org" }); f.O.addTeam("org", "navigators");
+  a.equal(f.O.dissolve("org").status, "dissolved");
+  a.equal(f.O.has("org"), false);
+  a.throws(function(){ f.O.addTeam("org", "galley"); }, "cannot add to a dissolved org");
+  a.throws(function(){ f.O.dissolve("org"); }, "already dissolved");
+  a.equal(f.O.list().length, 0);
+  a.equal(f.O.list(true).length, 1);
+});
+
+suite.test("organizations are append-only in the Memory Ocean", function(a){
+  var f = fresh();
+  f.O.found({ name: "Org" });        // 1
+  f.O.addTeam("org", "navigators");   // +1
+  f.O.removeTeam("org", "navigators");// +1
+  a.equal(f.os.memory.recall({ type: "org" }).length, 1, "one current org");
+  a.equal(f.os.memory.recall({ type: "org", includeSuperseded: true }).length, 3, "every version kept");
+});
+
+suite.test("status() summarises orgs and what they contain", function(a){
+  var f = fresh();
+  f.O.found({ name: "A" }); f.O.addTeam("a", "navigators"); f.O.addWorkspace("a", "winter-routing");
+  f.O.found({ name: "B" }); f.O.dissolve("b");
+  a.deepEqual(f.O.status(), { organizations: 1, dissolved: 1, teams: 1, workspaces: 1 });
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Organizations";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = fresh();
+  f.O.found({ name: "Harbor Authority", purpose: "run the harbor" });
+  f.O.addTeam("harbor-authority", "navigators");
+  f.O.addTeam("harbor-authority", "galley");
+  f.O.addWorkspace("harbor-authority", "winter-routing");
+  var table = document.getElementById("org");
+  f.O.teams("harbor-authority").forEach(function(tid){
+    var row = table.insertRow();
+    row.insertCell().textContent = tid;
+    var k = row.insertCell(); k.textContent = "TEAM"; k.className = "team";
+    row.insertCell().textContent = f.T.members(tid).map(function(a){ return f.I.get(a).name; }).join(", ");
+  });
+  f.O.workspaces("harbor-authority").forEach(function(wid){
+    var row = table.insertRow();
+    row.insertCell().textContent = wid;
+    var k = row.insertCell(); k.textContent = "WORKSPACE"; k.className = "ws";
+    row.insertCell().textContent = f.W.members(wid).map(function(m){ return f.I.get(m.actor).name; }).join(", ");
+  });
+  var total = table.insertRow();
+  var tc = total.insertCell(); tc.textContent = "= roster (union)"; tc.colSpan = 2; tc.style.color = "#8fb3c4";
+  total.insertCell().textContent = f.O.members("harbor-authority").map(function(a){ return f.I.get(a).name; }).join(", ");
+})();
+</script>
+</body>
+</html>
