@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Evaluation</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  #card{margin-top:14px;background:#061a26;border:1px solid #12455f;border-radius:8px;padding:16px 18px;display:flex;gap:22px;align-items:center}
+  #grade{font-size:44px;font-weight:bold}
+  .A,.B{color:#34d399} .C{color:#fbbf24} .D,.F{color:#fb7185}
+  #metrics{font-size:13px} #metrics div{margin:2px 0}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Evaluation</b> (build 0033, Stage 4 · Intelligence). A health scorecard for the whole system. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — the system grades itself</h2>
+<div id="card"><div id="grade">–</div><div id="metrics"></div></div>
+<div class="note">Every number is computed from the current ocean by composing the Reasoner (0028), the Learner (0030), and the Graph (0027) — the Intelligence stage turning its own lenses on the whole.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="reason.js"></script>
+<script src="learn.js"></script>
+<script src="graph.js"></script>
+<script src="evaluate.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+
+function perfect(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "eval-perfect" });
+  os.start();
+  var o1 = os.reality.observe({ observation: "a", source: "buoy" }); os.reality.verify(o1.meta.oid);
+  var o2 = os.reality.observe({ observation: "b", source: "buoy" }); os.reality.verify(o2.meta.oid);
+  os.decisions.decide(os.decisions.propose({ question: "q", options: ["y","n"], grounds: [o1.meta.oid] }).meta.did, "y");
+  os.knowledge.learn({ statement: "k", grounds: [o1.meta.oid] });
+  return os;
+}
+function mixed(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "eval-mixed" });
+  os.start();
+  var a = os.reality.observe({ observation: "x", source: "buoy" }); os.reality.verify(a.meta.oid);       // verified
+  var b = os.reality.observe({ observation: "y", source: "buoy" }); os.reality.verify(b.meta.oid);        // then rejected
+  os.reality.observe({ observation: "z" });                                                               // pending, unattributed
+  os.decisions.decide(os.decisions.propose({ question: "q", options: ["y","n"], grounds: [a.meta.oid] }).meta.did, "y"); // sound
+  os.knowledge.learn({ statement: "on b", grounds: [b.meta.oid] });
+  os.reality.reject(b.meta.oid, "wrong");   // knowledge on b → unsound; b rejected
+  return os;
+}
+
+var suite = OceanicCore.createVerifier({ name: "Evaluation (build 0033)" });
+
+suite.test("factory requires an assembled OceanicOS; publishes grade bands", function(a){
+  a.equal(typeof OceanicCore.createEvaluator, "function");
+  a.throws(function(){ OceanicCore.createEvaluator({}); });
+  a.equal(OceanicCore.createEvaluator.grade(95), "A");
+  a.equal(OceanicCore.createEvaluator.grade(85), "B");
+  a.equal(OceanicCore.createEvaluator.grade(75), "C");
+  a.equal(OceanicCore.createEvaluator.grade(65), "D");
+  a.equal(OceanicCore.createEvaluator.grade(50), "F");
+});
+
+suite.test("a fully verified, sound, reliable ocean scores 100 / A", function(a){
+  var r = OceanicCore.createEvaluator({ oceanic: perfect() }).evaluate();
+  a.equal(r.score, 100);
+  a.equal(r.grade, "A");
+  a.deepEqual(r.metrics, { verifiedCoverage: 1, soundnessRatio: 1, sourceReliability: 1 });
+  a.equal(r.issues, 0);
+});
+
+suite.test("verified coverage reflects how much reality has been verified", function(a){
+  var r = OceanicCore.createEvaluator({ oceanic: mixed() }).evaluate();
+  a.deepEqual(r.observations, { total: 3, verified: 1, pending: 1, rejected: 1, archived: 0 });
+  a.equal(r.metrics.verifiedCoverage, 0.33, "1 of 3 verified");
+});
+
+suite.test("soundness ratio counts only records that cite grounds", function(a){
+  var r = OceanicCore.createEvaluator({ oceanic: mixed() }).evaluate();
+  a.equal(r.soundness.sound, 1);
+  a.equal(r.soundness.unsound, 1);
+  a.equal(r.metrics.soundnessRatio, 0.5, "1 sound of 2 grounded");
+});
+
+suite.test("source reliability comes from the Learner", function(a){
+  var r = OceanicCore.createEvaluator({ oceanic: mixed() }).evaluate();
+  a.equal(r.metrics.sourceReliability, 0.5, "buoy: 1 verified, 1 rejected");
+});
+
+suite.test("the overall score is the mean of the applicable metrics", function(a){
+  var r = OceanicCore.createEvaluator({ oceanic: mixed() }).evaluate();
+  // mean(0.3333, 0.5, 0.5) = 0.4444 → 44
+  a.equal(r.score, 44);
+  a.equal(r.grade, "F");
+  a.equal(r.issues, 1, "one unsound record to revisit");
+});
+
+suite.test("source reliability is OMITTED from the score while no source has a verdict", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  os.start();
+  os.reality.observe({ observation: "pending, unattributed" }); // no verdict, no source
+  var r = OceanicCore.createEvaluator({ oceanic: os }).evaluate();
+  a.equal(r.metrics.sourceReliability, null, "no reliability yet");
+  // score = mean(verifiedCoverage 0, soundnessRatio 1) = 0.5 → 50
+  a.equal(r.score, 50);
+});
+
+suite.test("an empty ocean is treated fairly — vacuous metrics score 100", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  os.start();
+  var r = OceanicCore.createEvaluator({ oceanic: os }).evaluate();
+  a.equal(r.score, 100);
+  a.equal(r.grade, "A");
+  a.equal(r.observations.total, 0);
+});
+
+suite.test("the scorecard reports observations, soundness, sources and graph blocks", function(a){
+  var r = OceanicCore.createEvaluator({ oceanic: mixed() }).evaluate();
+  a.ok(r.observations && typeof r.observations.total === "number");
+  a.ok(r.soundness && typeof r.soundness.sound === "number");
+  a.ok(r.sources && typeof r.sources.count === "number");
+  a.ok(r.graph && typeof r.graph.nodes === "number");
+  a.ok(r.headline.indexOf("Grade F") >= 0 && r.headline.indexOf("revisit") >= 0);
+});
+
+suite.test("evaluation is pure — it writes nothing", function(a){
+  var os = mixed();
+  var before = os.status().memory.count;
+  var E = OceanicCore.createEvaluator({ oceanic: os });
+  E.evaluate(); E.evaluate();
+  a.equal(os.status().memory.count, before);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Evaluation";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var r = OceanicCore.createEvaluator({ oceanic: mixed() }).evaluate();
+  var g = document.getElementById("grade"); g.textContent = r.grade; g.className = r.grade;
+  document.getElementById("metrics").innerHTML =
+    "<div><b>" + r.headline + "</b></div>" +
+    "<div>verified coverage: " + Math.round(r.metrics.verifiedCoverage * 100) + "%</div>" +
+    "<div>soundness: " + Math.round(r.metrics.soundnessRatio * 100) + "%</div>" +
+    "<div>source reliability: " + (r.metrics.sourceReliability == null ? "—" : Math.round(r.metrics.sourceReliability * 100) + "%") + "</div>" +
+    "<div>ocean: " + r.observations.total + " observations · graph " + r.graph.nodes + " nodes / " + r.graph.edges + " edges</div>";
+})();
+</script>
+</body>
+</html>
