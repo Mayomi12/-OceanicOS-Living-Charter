@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Simulation</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .from{color:#34d399} .to{color:#fb7185} .arrow{color:#8fb3c4}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Simulation</b> (build 0032, Stage 4 · Intelligence). What-if over the ocean, mutating nothing. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — "if the north reef sighting were wrong…"</h2>
+<table id="sim"><tr><th>Type</th><th>Record</th><th>Now</th><th></th><th>Would become</th></tr></table>
+<div class="note">This projection changed nothing: after running it, every real record still holds its true status. Simulation is safe to explore before acting for real.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="simulate.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+
+function seeded(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "sim-test" });
+  os.start();
+  var o1 = os.reality.observe({ observation: "the north reef" }); os.reality.verify(o1.meta.oid);
+  var d1 = os.decisions.propose({ question: "reroute past the reef?", options: ["y","n"], grounds: [o1.meta.oid] }); os.decisions.decide(d1.meta.did, "y");
+  var k1 = os.knowledge.learn({ statement: "the reef is real", grounds: [o1.meta.oid] });
+  var o2 = os.reality.observe({ observation: "the south shoal" }); os.reality.verify(o2.meta.oid);
+  var d2 = os.decisions.propose({ question: "slow down?", options: ["y","n"], grounds: [o2.meta.oid] }); os.decisions.decide(d2.meta.did, "y");
+  os.knowledge.learn({ statement: "the sea is vast", topics: ["poetry"] }); // ungrounded
+  return { os: os, o1: o1.meta.oid, o2: o2.meta.oid, d1: d1.meta.did, k1: k1.meta.kid, d2: d2.meta.did };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Simulation (build 0032)" });
+
+suite.test("factory requires an assembled OceanicOS; publishes STATUSES", function(a){
+  a.equal(typeof OceanicCore.createSimulator, "function");
+  a.throws(function(){ OceanicCore.createSimulator({}); });
+  a.deepEqual(OceanicCore.createSimulator.STATUSES, ["pending","verified","rejected","archived","missing"]);
+  var S = OceanicCore.createSimulator({ oceanic: seeded().os });
+  ["simulate","whatIfReject","whatIfVerify"].forEach(function(fn){ a.equal(typeof S[fn], "function", "exposes " + fn); });
+});
+
+suite.test("rejecting a verified ground would flip everything on it sound → unsound", function(a){
+  var f = seeded();
+  var S = OceanicCore.createSimulator({ oceanic: f.os });
+  var r = S.whatIfReject(f.o1);
+  a.equal(r.affected, 2, "the decision and the knowledge on o1");
+  a.deepEqual(r.transitions, { "sound→unsound": 2 });
+  a.equal(r.worsened, 2);
+  a.equal(r.safe, false);
+  var ids = r.changes.map(function(c){ return c.id; }).sort();
+  a.deepEqual(ids, [f.d1, f.k1].sort());
+});
+
+suite.test("the projection MUTATES NOTHING — the ocean is unchanged afterward", function(a){
+  var f = seeded();
+  var S = OceanicCore.createSimulator({ oceanic: f.os });
+  var before = f.os.status().memory.count;
+  S.whatIfReject(f.o1); S.whatIfVerify(f.o1); S.simulate({ set: {} });
+  a.equal(f.os.reality.get(f.o1).meta.status, "verified", "o1 is still verified");
+  a.equal(f.os.decisions.get(f.d1).meta.status, "decided", "the decision is untouched");
+  a.equal(f.os.status().memory.count, before, "no records written");
+});
+
+suite.test("only records grounded on the changed observation are affected", function(a){
+  var f = seeded();
+  var S = OceanicCore.createSimulator({ oceanic: f.os });
+  var r = S.whatIfReject(f.o1);
+  a.equal(r.changes.filter(function(c){ return c.id === f.d2; }).length, 0, "d2 (on o2) is not affected");
+});
+
+suite.test("archiving a ground would make its dependents provisional", function(a){
+  var f = seeded();
+  var S = OceanicCore.createSimulator({ oceanic: f.os });
+  var r = S.simulate({ set: (function(){ var s = {}; s[f.o1] = "archived"; return s; })() });
+  a.deepEqual(r.transitions, { "sound→provisional": 2 });
+  a.equal(r.safe, false);
+});
+
+suite.test("a hypothetical can IMPROVE soundness (provisional → sound)", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  os.start();
+  var o = os.reality.observe({ observation: "tentative" }); os.reality.verify(o.meta.oid);
+  var d = os.decisions.propose({ question: "anchor?", options: ["y","n"], grounds: [o.meta.oid] }); os.decisions.decide(d.meta.did, "y");
+  os.reality.archive(o.meta.oid); // d is now provisional for real
+  var S = OceanicCore.createSimulator({ oceanic: os });
+  var r = S.whatIfVerify(o.meta.oid);
+  a.deepEqual(r.transitions, { "provisional→sound": 1 });
+  a.equal(r.improved, 1);
+  a.equal(r.safe, true, "nothing gets worse — a safe move");
+});
+
+suite.test("a missing (deleted) ground would break its dependents", function(a){
+  var f = seeded();
+  var S = OceanicCore.createSimulator({ oceanic: f.os });
+  var r = S.simulate({ set: (function(){ var s = {}; s[f.o1] = "missing"; return s; })() });
+  a.deepEqual(r.transitions, { "sound→broken": 2 });
+});
+
+suite.test("multi-observation scenarios combine", function(a){
+  var f = seeded();
+  var S = OceanicCore.createSimulator({ oceanic: f.os });
+  var r = S.simulate({ set: (function(){ var s = {}; s[f.o1] = "rejected"; s[f.o2] = "rejected"; return s; })() });
+  a.equal(r.affected, 3, "both o1's two dependents and o2's one");
+  a.equal(r.worsened, 3);
+});
+
+suite.test("an empty scenario changes nothing and is safe", function(a){
+  var S = OceanicCore.createSimulator({ oceanic: seeded().os });
+  var r = S.simulate({});
+  a.equal(r.affected, 0);
+  a.equal(r.safe, true);
+  a.deepEqual(r.changes, []);
+});
+
+suite.test("worst outcomes are ordered first in the change list", function(a){
+  var f = seeded();
+  var S = OceanicCore.createSimulator({ oceanic: f.os });
+  // reject o1 (→ unsound) and archive o2 (→ provisional) at once
+  var r = S.simulate({ set: (function(){ var s = {}; s[f.o1] = "rejected"; s[f.o2] = "archived"; return s; })() });
+  a.equal(r.changes[0].to, "unsound", "the unsound flip is listed before the provisional one");
+});
+
+suite.test("invalid scenarios are refused", function(a){
+  var f = seeded();
+  var S = OceanicCore.createSimulator({ oceanic: f.os });
+  a.throws(function(){ S.simulate({ set: (function(){ var s = {}; s[f.o1] = "weird"; return s; })() }); }, "bad status");
+  a.throws(function(){ S.simulate({ set: "nope" }); }, "bad set");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Simulation";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = seeded();
+  var S = OceanicCore.createSimulator({ oceanic: f.os });
+  var table = document.getElementById("sim");
+  S.whatIfReject(f.o1).changes.forEach(function(c){
+    var row = table.insertRow();
+    row.insertCell().textContent = c.type;
+    row.insertCell().textContent = c.title;
+    var f0 = row.insertCell(); f0.textContent = c.from.toUpperCase(); f0.className = "from";
+    var ar = row.insertCell(); ar.textContent = "→"; ar.className = "arrow";
+    var t0 = row.insertCell(); t0.textContent = c.to.toUpperCase(); t0.className = "to";
+  });
+})();
+</script>
+</body>
+</html>
