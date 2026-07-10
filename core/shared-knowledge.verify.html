@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Shared Knowledge</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .t-observation{color:#38bdf8} .t-decision{color:#fbbf24} .t-knowledge{color:#34d399}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Shared Knowledge</b> (build 0041, Stage 5 · Collaboration). What a workspace actually knows — Search + Graph scoped to its records. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — what the "Winter Routing" workspace knows</h2>
+<table id="know"><tr><th>Type</th><th>Record</th><th>Status</th></tr></table>
+<div class="note">A workspace is a lens onto the one shared Ocean, never a copy — this list is resolved live from the records the workspace has linked. A free-text note links to no record and shows up as unresolved.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="identity.js"></script>
+<script src="workspaces.js"></script>
+<script src="search.js"></script>
+<script src="graph.js"></script>
+<script src="shared-knowledge.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function seeded(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "sk-test" });
+  var I = OceanicCore.createIdentity({ oceanic: os }); I.register({ name: "Kai", role: "steward" });
+  var W = OceanicCore.createWorkspaces({ oceanic: os, identity: I });
+  var o1 = os.reality.observe({ observation: "north channel shoals at low water" }); os.reality.verify(o1.meta.oid);
+  var d1 = os.decisions.propose({ question: "reroute the channel?", options: ["y","n"], grounds: [o1.meta.oid] }); os.decisions.decide(d1.meta.did, "y");
+  var k1 = os.knowledge.learn({ statement: "the channel is unsafe below half tide", topics: ["tides"], grounds: [o1.meta.oid] });
+  var o2 = os.reality.observe({ observation: "an unrelated whale sighting near the harbor" }); os.reality.verify(o2.meta.oid); // NOT gathered
+  W.create({ name: "Winter Routing" });
+  W.link("winter-routing", { kind: "observation", id: o1.meta.oid });
+  W.link("winter-routing", { kind: "decision", id: d1.meta.did });
+  W.link("winter-routing", { kind: "knowledge", id: k1.meta.kid });
+  W.link("winter-routing", { kind: "note", id: "a free-text note, not a record" });
+  return { os: os, I: I, W: W, o1: o1.meta.oid, d1: d1.meta.did, k1: k1.meta.kid, o2: o2.meta.oid };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Shared Knowledge (build 0041)" });
+
+suite.test("factory requires an OceanicOS and a Workspaces", function(a){
+  a.equal(typeof OceanicCore.createSharedKnowledge, "function");
+  a.throws(function(){ OceanicCore.createSharedKnowledge({}); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createSharedKnowledge({ oceanic: seeded().os }); }, "no workspaces");
+  var f = seeded();
+  var SK = OceanicCore.createSharedKnowledge({ oceanic: f.os, workspaces: f.W });
+  ["knows","search","connections","unresolved","summary"].forEach(function(fn){ a.equal(typeof SK[fn], "function", "exposes " + fn); });
+});
+
+suite.test("knows() resolves the workspace's linked records", function(a){
+  var f = seeded();
+  var SK = OceanicCore.createSharedKnowledge({ oceanic: f.os, workspaces: f.W });
+  var recs = SK.knows("winter-routing");
+  a.equal(recs.length, 3, "observation + decision + knowledge (the note resolves to nothing)");
+  a.deepEqual(recs.map(function(r){ return r.type; }).sort(), ["decision","knowledge","observation"]);
+  var obs = recs.filter(function(r){ return r.type === "observation"; })[0];
+  a.equal(obs.id, f.o1);
+  a.equal(obs.status, "verified");
+});
+
+suite.test("unresolved() reports links that point at no record", function(a){
+  var f = seeded();
+  var SK = OceanicCore.createSharedKnowledge({ oceanic: f.os, workspaces: f.W });
+  a.deepEqual(SK.unresolved("winter-routing"), ["a free-text note, not a record"]);
+});
+
+suite.test("search() is SCOPED to the workspace — the wider Ocean is excluded", function(a){
+  var f = seeded();
+  var SK = OceanicCore.createSharedKnowledge({ oceanic: f.os, workspaces: f.W });
+  // the whale observation is verified and in the Ocean, but not in this workspace
+  a.equal(SK.search("winter-routing", "whale").length, 0, "not gathered here → not found here");
+  var global = OceanicCore.createSearch({ oceanic: f.os }).search("whale").length;
+  a.ok(global >= 1, "…even though it exists globally");
+});
+
+suite.test("search() still finds what the workspace does hold", function(a){
+  var f = seeded();
+  var SK = OceanicCore.createSharedKnowledge({ oceanic: f.os, workspaces: f.W });
+  var hits = SK.search("winter-routing", "channel");
+  a.ok(hits.length >= 1, "channel appears in the gathered records");
+  hits.forEach(function(h){ a.ok([f.o1, f.d1, f.k1].indexOf(h.id) >= 0, "every hit is in the workspace"); });
+});
+
+suite.test("connections() returns the graph edges AMONG the workspace's records", function(a){
+  var f = seeded();
+  var SK = OceanicCore.createSharedKnowledge({ oceanic: f.os, workspaces: f.W });
+  var edges = SK.connections("winter-routing");
+  // the decision and the knowledge both ground on the observation → 2 internal edges
+  a.equal(edges.length, 2);
+  edges.forEach(function(e){ a.equal(e.to, f.o1, "both point at the shared observation"); a.equal(e.rel, "grounds"); });
+});
+
+suite.test("connections() excludes edges to records outside the workspace", function(a){
+  var f = seeded();
+  // link ONLY the decision (whose ground o1 is NOT in the workspace)
+  f.W.create({ name: "Just The Decision" });
+  f.W.link("just-the-decision", { kind: "decision", id: f.d1 });
+  var SK = OceanicCore.createSharedKnowledge({ oceanic: f.os, workspaces: f.W });
+  a.equal(SK.connections("just-the-decision").length, 0, "the decision's ground isn't gathered, so no internal edge");
+});
+
+suite.test("summary() counts records by type, connections and unresolved links", function(a){
+  var f = seeded();
+  var SK = OceanicCore.createSharedKnowledge({ oceanic: f.os, workspaces: f.W });
+  a.deepEqual(SK.summary("winter-routing"), {
+    records: 3, byType: { observation: 1, decision: 1, knowledge: 1 }, connections: 2, unresolved: 1
+  });
+});
+
+suite.test("an empty workspace knows nothing (cleanly)", function(a){
+  var f = seeded();
+  f.W.create({ name: "Empty" });
+  var SK = OceanicCore.createSharedKnowledge({ oceanic: f.os, workspaces: f.W });
+  a.deepEqual(SK.knows("empty"), []);
+  a.deepEqual(SK.summary("empty"), { records: 0, byType: {}, connections: 0, unresolved: 0 });
+});
+
+suite.test("it is a live lens — gathering more into the workspace updates what it knows", function(a){
+  var f = seeded();
+  var SK = OceanicCore.createSharedKnowledge({ oceanic: f.os, workspaces: f.W });
+  a.equal(SK.knows("winter-routing").length, 3);
+  f.W.link("winter-routing", { kind: "observation", id: f.o2 }); // add the whale
+  a.equal(SK.knows("winter-routing").length, 4, "the lens reflects it immediately");
+  a.equal(SK.search("winter-routing", "whale").length, 1, "and now the whale is searchable here");
+});
+
+suite.test("acting on an unknown workspace is refused", function(a){
+  var f = seeded();
+  var SK = OceanicCore.createSharedKnowledge({ oceanic: f.os, workspaces: f.W });
+  a.throws(function(){ SK.knows("ghost"); });
+  a.throws(function(){ SK.summary("ghost"); });
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Shared Knowledge";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = seeded();
+  var SK = OceanicCore.createSharedKnowledge({ oceanic: f.os, workspaces: f.W });
+  var table = document.getElementById("know");
+  SK.knows("winter-routing").forEach(function(r){
+    var row = table.insertRow();
+    var c = row.insertCell(); c.textContent = r.type.toUpperCase(); c.className = "t-" + r.type;
+    row.insertCell().textContent = r.title;
+    row.insertCell().textContent = r.status || "—";
+  });
+})();
+</script>
+</body>
+</html>
