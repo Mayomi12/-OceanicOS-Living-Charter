@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Permissions</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:7px 10px;font-size:12px;text-align:center}
+  th:first-child,td:first-child{text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .y{color:#34d399} .n{color:#fb7185}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Permissions</b> (build 0036, Stage 5 · Collaboration). Role-gated authorization over operations. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — who may do what</h2>
+<table id="matrix"></table>
+<div class="note">Reads need an observer; recording needs a contributor; passing a verdict needs a steward; changing the register needs an admin. Nothing here overrides the Charter's human final authority.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="identity.js"></script>
+<script src="permissions.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function fresh(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "perm-test" });
+  var I = OceanicCore.createIdentity({ oceanic: os });
+  I.register({ name: "Kai", role: "admin" });
+  I.register({ name: "Stew", role: "steward" });
+  I.register({ name: "Contrib", role: "contributor" });
+  I.register({ name: "Obs", role: "observer" });
+  return { os: os, I: I, P: OceanicCore.createPermissions({ identity: I }) };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Permissions (build 0036)" });
+
+suite.test("factory requires an Identity; publishes ROLES and a default policy", function(a){
+  a.equal(typeof OceanicCore.createPermissions, "function");
+  a.throws(function(){ OceanicCore.createPermissions({}); });
+  a.deepEqual(OceanicCore.createPermissions.ROLES, ["observer","contributor","steward","admin"]);
+  a.ok(Object.keys(OceanicCore.createPermissions.DEFAULT_POLICY).length >= 17, "covers the API operations");
+  var f = fresh();
+  ["can","guard","reason","requiredFor","wrap","policy"].forEach(function(fn){ a.equal(typeof f.P[fn], "function", "exposes " + fn); });
+});
+
+suite.test("reads require an observer; recording requires a contributor", function(a){
+  var f = fresh();
+  f.I.signIn("obs");
+  a.equal(f.P.can("reality.list"), true, "observer can read");
+  a.equal(f.P.can("reality.observe"), false, "observer cannot record");
+  f.I.signIn("contrib");
+  a.equal(f.P.can("reality.observe"), true, "contributor can record");
+});
+
+suite.test("passing a verdict on reality requires a steward", function(a){
+  var f = fresh();
+  a.equal(f.P.requiredFor("reality.verify"), "steward");
+  f.I.signIn("contrib");
+  a.equal(f.P.can("reality.verify"), false);
+  a.equal(f.P.can("reality.reject"), false);
+  a.equal(f.P.can("decision.decide"), false);
+  f.I.signIn("stew");
+  a.equal(f.P.can("reality.verify"), true);
+  a.equal(f.P.can("decision.decide"), true);
+});
+
+suite.test("changing the register of actors requires an admin", function(a){
+  var f = fresh();
+  f.I.signIn("stew");
+  a.equal(f.P.can("identity.setRole"), false, "even a steward cannot re-role actors");
+  f.I.signIn("kai");
+  a.equal(f.P.can("identity.setRole"), true, "an admin can");
+  a.equal(f.P.can("identity.retire"), true);
+});
+
+suite.test("higher roles inherit everything lower roles may do", function(a){
+  var f = fresh();
+  f.I.signIn("kai"); // admin
+  ["reality.list","reality.observe","reality.verify","identity.setRole"].forEach(function(op){
+    a.equal(f.P.can(op), true, "admin can " + op);
+  });
+});
+
+suite.test("an anonymous caller (nobody signed in) is denied by default", function(a){
+  var f = fresh();
+  a.equal(f.I.current(), null);
+  a.equal(f.P.can("reality.list"), false, "must sign in even to read, by default");
+  a.equal(f.P.can("reality.verify"), false);
+});
+
+suite.test("guard() throws with an explanatory message; reason() explains without throwing", function(a){
+  var f = fresh();
+  f.I.signIn("contrib");
+  a.throws(function(){ f.P.guard("reality.verify"); }, "denied");
+  a.ok(f.P.reason("reality.verify").indexOf("steward") >= 0, "names the required role");
+  a.equal(f.P.reason("reality.list"), null, "no reason when allowed");
+  f.I.signIn("stew");
+  a.equal(f.P.guard("reality.verify"), true, "guard passes for a steward");
+});
+
+suite.test("can() accepts an explicit actor, overriding the session", function(a){
+  var f = fresh();
+  f.I.signIn("obs");
+  a.equal(f.P.can("reality.verify", f.I.get("stew")), true, "checked against the passed steward, not the session");
+  a.equal(f.P.can("reality.verify", null), false, "explicit null actor = anonymous");
+});
+
+suite.test("wrap() turns an API into a permission-gated one — refusals are { ok:false }, never thrown", function(a){
+  var f = fresh();
+  var gated = f.P.wrap(OceanicCore.createAPI({ oceanic: f.os }));
+  f.I.signIn("contrib");
+  var obs = gated.call("reality.observe", { observation: "a sighting" });
+  a.equal(obs.ok, true, "a contributor may observe");
+  var denied = gated.call("reality.verify", { id: obs.data.id });
+  a.equal(denied.ok, false, "but not verify");
+  a.ok(denied.error.indexOf("permission denied") >= 0);
+  f.I.signIn("stew");
+  a.equal(gated.call("reality.verify", { id: obs.data.id }).ok, true, "a steward may verify it");
+  a.throws(function(){ f.P.wrap({}); }, "wrap needs a real API");
+});
+
+suite.test("policy overrides and an anonymous role are honoured", function(a){
+  var f = fresh();
+  var P2 = OceanicCore.createPermissions({ identity: f.I, anonymous: "observer", policy: { "reality.observe": "steward" } });
+  a.equal(P2.can("reality.list", null), true, "anonymous may read when configured");
+  f.I.signIn("contrib");
+  a.equal(P2.can("reality.observe"), false, "observe now requires steward per the override");
+  a.throws(function(){ OceanicCore.createPermissions({ identity: f.I, policy: { x: "emperor" } }); }, "bad policy role refused");
+});
+
+suite.test("an operation not named in the policy falls back to the default role", function(a){
+  var f = fresh();
+  a.equal(f.P.requiredFor("some.unknown.op"), "steward", "conservative default");
+  var lax = OceanicCore.createPermissions({ identity: f.I, defaultRole: "observer" });
+  a.equal(lax.requiredFor("some.unknown.op"), "observer");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Permissions";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: a who-may-do-what matrix ---- */
+(function(){
+  var f = fresh();
+  var ops = ["reality.list", "reality.observe", "reality.verify", "decision.decide", "identity.setRole"];
+  var roles = [["obs","observer"],["contrib","contributor"],["stew","steward"],["kai","admin"]];
+  var table = document.getElementById("matrix");
+  var head = table.insertRow(); head.appendChild(th("operation"));
+  roles.forEach(function(r){ head.appendChild(th(r[1])); });
+  ops.forEach(function(op){
+    var row = table.insertRow();
+    var c0 = row.insertCell(); c0.textContent = op; c0.style.textAlign = "left";
+    roles.forEach(function(r){
+      f.I.signIn(r[0]);
+      var cell = row.insertCell();
+      var ok = f.P.can(op);
+      cell.textContent = ok ? "✓" : "·"; cell.className = ok ? "y" : "n";
+    });
+  });
+  function th(t){ var e = document.createElement("th"); e.textContent = t; return e; }
+})();
+</script>
+</body>
+</html>
