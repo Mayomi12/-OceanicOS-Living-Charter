@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Recommendation</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .t-observation{color:#38bdf8} .t-decision{color:#fbbf24} .t-knowledge{color:#34d399} .t-project{color:#c084fc}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Recommendation</b> (build 0031, Stage 4 · Intelligence). Relevance over the Graph + Search. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — the load-bearing records (hubs)</h2>
+<table id="hubs"><tr><th>Type</th><th>Degree</th><th>Record</th></tr></table>
+<div class="note">These are where the most is connected — verify or revisit them and the most rides on the outcome.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="search.js"></script>
+<script src="graph.js"></script>
+<script src="recommend.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+
+function seeded(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "rec-test" });
+  os.start();
+  var o1 = os.reality.observe({ observation: "north channel shoals at low tide" }); os.reality.verify(o1.meta.oid);
+  var o2 = os.reality.observe({ observation: "north channel current is strong" }); os.reality.verify(o2.meta.oid);
+  var d1 = os.decisions.propose({ question: "reroute the north channel?", options: ["y","n"], grounds: [o1.meta.oid] }); os.decisions.decide(d1.meta.did, "y");
+  var k1 = os.knowledge.learn({ statement: "north channel unsafe below half tide", topics: ["tides"], grounds: [o1.meta.oid] });
+  var p1 = os.projects.open({ name: "Winter channel routing" });
+  os.projects.link(p1.meta.pid, { kind: "observation", id: o1.meta.oid });
+  os.projects.link(p1.meta.pid, { kind: "decision", id: d1.meta.did });
+  os.projects.link(p1.meta.pid, { kind: "knowledge", id: k1.meta.kid });
+  return { os: os, o1: o1.meta.oid, o2: o2.meta.oid, d1: d1.meta.did, k1: k1.meta.kid, p1: p1.meta.pid };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Recommendation (build 0031)" });
+
+suite.test("factory needs a Graph and a Search (built from an OceanicOS)", function(a){
+  a.equal(typeof OceanicCore.createRecommender, "function");
+  a.throws(function(){ OceanicCore.createRecommender({}); }, "no oceanic → no graph/search");
+  var R = OceanicCore.createRecommender({ oceanic: seeded().os });
+  ["related","hubs","similar"].forEach(function(fn){ a.equal(typeof R[fn], "function", "exposes " + fn); });
+});
+
+suite.test("related() ranks directly-connected records highest, with a reason", function(a){
+  var f = seeded();
+  var R = OceanicCore.createRecommender({ oceanic: f.os });
+  var rel = R.related(f.o1);
+  a.ok(rel.length >= 3, "the decision, knowledge and project all relate to o1");
+  a.ok(rel[0].reasons.indexOf("directly connected") >= 0, "the top result is directly connected");
+  var ids = rel.map(function(r){ return r.id; });
+  [f.d1, f.k1, f.p1].forEach(function(id){ a.ok(ids.indexOf(id) >= 0, "includes " + id); });
+});
+
+suite.test("every recommendation carries the reasons it was suggested", function(a){
+  var f = seeded();
+  var R = OceanicCore.createRecommender({ oceanic: f.os });
+  R.related(f.o1).forEach(function(r){ a.ok(r.reasons.length >= 1, r.id + " has at least one reason"); });
+});
+
+suite.test("records in the same cluster are related even without a direct edge", function(a){
+  var f = seeded();
+  var R = OceanicCore.createRecommender({ oceanic: f.os });
+  // the knowledge k1 and the decision d1 are not directly linked to each other,
+  // but both connect to o1 / the project, so they share a cluster
+  var relK = R.related(f.k1).map(function(r){ return r.id; });
+  a.ok(relK.indexOf(f.d1) >= 0, "the decision is recommended from the knowledge (same cluster)");
+});
+
+suite.test("similar wording contributes relevance", function(a){
+  var f = seeded();
+  var R = OceanicCore.createRecommender({ oceanic: f.os });
+  // o2 ('north channel current') shares words with o1 ('north channel shoals') but no edge
+  var rel = R.related(f.o1).filter(function(r){ return r.id === f.o2; });
+  a.equal(rel.length, 1, "o2 is recommended");
+  a.ok(rel[0].reasons.indexOf("similar wording") >= 0, "by shared wording");
+});
+
+suite.test("related() on an unknown id is empty, not an error", function(a){
+  var R = OceanicCore.createRecommender({ oceanic: seeded().os });
+  a.deepEqual(R.related("ghost"), []);
+});
+
+suite.test("hubs() ranks the load-bearing records by degree", function(a){
+  var f = seeded();
+  var R = OceanicCore.createRecommender({ oceanic: f.os });
+  var hubs = R.hubs();
+  a.equal(hubs[0].id, f.o1, "o1 carries the most connections");
+  a.ok(hubs[0].degree >= 3, "grounded by a decision, knowledge, and a project link");
+});
+
+suite.test("hubs() excludes records with no connections", function(a){
+  var f = seeded();
+  var R = OceanicCore.createRecommender({ oceanic: f.os });
+  var ids = R.hubs().map(function(h){ return h.id; });
+  a.equal(ids.indexOf(f.o2), -1, "the unconnected observation is not a hub");
+});
+
+suite.test("similar(text) gives free-text relevance for things not in the ocean", function(a){
+  var R = OceanicCore.createRecommender({ oceanic: seeded().os });
+  var res = R.similar("channel tide safety");
+  a.ok(res.length >= 2, "several records match the free text");
+  res.forEach(function(r){ a.ok(typeof r.score === "number", "scored"); });
+});
+
+suite.test("limit caps related() and hubs()", function(a){
+  var R = OceanicCore.createRecommender({ oceanic: seeded().os });
+  a.ok(R.related(seeded().o1, { limit: 1 }).length <= 1);
+  a.ok(R.hubs({ limit: 1 }).length <= 1);
+});
+
+suite.test("recommendation is pure — it writes nothing", function(a){
+  var f = seeded();
+  var before = f.os.status().memory.count;
+  var R = OceanicCore.createRecommender({ oceanic: f.os });
+  R.related(f.o1); R.hubs(); R.similar("channel");
+  a.equal(f.os.status().memory.count, before);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Recommendation";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var R = OceanicCore.createRecommender({ oceanic: seeded().os });
+  var table = document.getElementById("hubs");
+  R.hubs().forEach(function(h){
+    var row = table.insertRow();
+    var c = row.insertCell(); c.textContent = h.type.toUpperCase(); c.className = "t-" + h.type;
+    row.insertCell().textContent = String(h.degree);
+    row.insertCell().textContent = h.title;
+  });
+})();
+</script>
+</body>
+</html>
