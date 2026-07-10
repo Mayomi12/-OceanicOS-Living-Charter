@@ -2,16 +2,257 @@
 
 > **Companion vision document, not the ratified operational Charter.**
 > This is the platform-agnostic constitutional vision for the wider OceanicOS
-> ecosystem. It is captured here verbatim as an additive document. It does **not**
-> amend or supersede the ratified operational **[Ω∞ OceanicOS Living Charter.md](Ω∞%20OceanicOS%20Living%20Charter.md)**
+> ecosystem, captured verbatim as an additive document. It does **not** amend or
+> supersede the ratified operational **[Ω∞ OceanicOS Living Charter.md](Ω∞%20OceanicOS%20Living%20Charter.md)**
 > (Seven Articles, v1.0.0), whose Article VII reserves amendment to the human
-> operator with an Amendment Log entry and whose history is never silently erased.
-> Where this document and the ratified Charter differ, the ratified Charter governs
-> operation; this document guides direction.
+> operator and whose history is never silently erased. Where this document and
+> the ratified Charter differ, the ratified Charter governs operation; this
+> document guides direction.
+>
+> Per this document's own Governance rule, earlier revisions remain archived
+> below — see the [Revision history](#revision-history).
 
 ---
 
-## Preamble
+**One Mission. Many Builders. Better Reality.**
+
+Status: Living Foundation
+Version: 1.0
+Mode: Open • Platform-Agnostic • Human-Centered • Evidence-Based
+
+---
+
+## The Mission
+
+Build an open ecosystem that helps humanity understand reality, preserve knowledge, coordinate intelligence, and improve the world through responsible collaboration.
+
+OceanicOS exists to strengthen people—not replace them.
+
+Every capability should help humans think more clearly, work together more effectively, and build systems that endure.
+
+---
+
+## Identity
+
+OceanicOS belongs to no single person, organization, nation, language, or AI model.
+
+It is defined by its principles.
+
+Its identity is carried by everyone who contributes responsibly.
+
+Kai is the reference orchestrator.
+
+Humans remain the stewards.
+
+---
+
+## The Constitutional Foundation
+
+Every implementation follows these commitments:
+
+- Reality before assumption.
+- Evidence before conclusion.
+- Human dignity before optimization.
+- Privacy by design.
+- Transparency where appropriate.
+- Accountability for decisions.
+- Continuous learning.
+- Open collaboration.
+- Long-term stewardship.
+- Responsible innovation.
+
+---
+
+## Universal Human Kernel
+
+Every field shares the same foundation:
+
+Identity · Memory · Knowledge · Evidence · Context · Ethics · Reasoning · Decision · Action · Reflection · Learning · Stewardship
+
+This kernel applies whether the domain is education, medicine, engineering, cybersecurity, research, law, public service, business, or the arts.
+
+---
+
+## Kai — Reference Orchestrator
+
+Kai helps coordinate work by:
+
+- Maintaining context.
+- Connecting knowledge.
+- Organizing information.
+- Supporting planning.
+- Explaining reasoning.
+- Verifying available evidence.
+- Preserving continuity.
+- Recommending next steps.
+
+Kai supports human decision-making but does not replace human responsibility.
+
+---
+
+## Universal Architecture
+
+```
+Reality
+   ↓
+Observation
+   ↓
+Evidence
+   ↓
+Knowledge
+   ↓
+Reasoning
+   ↓
+Planning
+   ↓
+Decision
+   ↓
+Action
+   ↓
+Evaluation
+   ↓
+Learning
+   ↓
+Stewardship
+   ↓
+Better Reality
+```
+
+---
+
+## Full-Stack Builder Framework
+
+**Stage 0 — Foundation:** Charter · Governance · Standards · Repository · Architecture
+
+**Stage 1 — Core:** Reality Engine · Memory Engine · Knowledge Engine · Verification Engine · Decision Engine
+
+**Stage 2 — Builder:** CLI · API · SDK · Automation · Documentation · Testing · Logging · Versioning
+
+**Stage 3 — Applications:** Web · Mobile · Desktop · Terminal · AI Assistants · Extensions
+
+**Stage 4 — Intelligence:** Search · Knowledge Graph · Planning · Simulation · Learning · Evaluation · Recommendations
+
+**Stage 5 — Collaboration:** Individuals · Teams · Organizations · Communities · Shared Knowledge · Governance
+
+**Stage 6 — Infrastructure:** Local-first · Cloud · Offline · Synchronization · Containers · CI/CD · Monitoring
+
+**Stage 7 — Ecosystem:** Plugins · Public APIs · Developer Platform · Templates · Education · Research · Community
+
+**Stage 8 — Stewardship:** Security · Privacy · Accessibility · Maintenance · Migration · Preservation · Continuous Improvement
+
+---
+
+## Universal Builder Cycle
+
+```
+Observe
+   ↓
+Verify
+   ↓
+Understand
+   ↓
+Design
+   ↓
+Build
+   ↓
+Test
+   ↓
+Document
+   ↓
+Release
+   ↓
+Evaluate
+   ↓
+Learn
+   ↓
+Improve
+```
+
+Each iteration should produce a measurable improvement and preserve a clear record of what changed.
+
+---
+
+## Governance
+
+OceanicOS evolves through transparent review.
+
+Every change should include:
+
+- Purpose.
+- Evidence.
+- Expected impact.
+- Compatibility considerations.
+- Documentation.
+- Version history.
+
+---
+
+## Compatibility
+
+An implementation may identify as **OceanicOS Compatible** when it:
+
+- Follows the Living Charter.
+- Implements the published standards.
+- Documents its behavior.
+- Preserves provenance where appropriate.
+- Passes compatibility tests.
+
+This allows diverse implementations while maintaining shared principles.
+
+---
+
+## Long-Term Vision
+
+OceanicOS aims to foster an ecosystem where:
+
+- Knowledge remains connected.
+- AI supports human judgment.
+- Systems are transparent and interoperable.
+- Communities learn from one another.
+- Technology contributes to human flourishing.
+- Future generations inherit stronger foundations.
+
+---
+
+## Final Builder Law
+
+> Start from reality. Build one verified capability at a time. Document it. Test it. Improve it. Share what you learn. Leave every system stronger than you found it. Continue.
+
+---
+
+*This version is designed to function as a constitutional document rather than a prompt. It can guide software development, governance, documentation, research, and collaboration while remaining independent of any specific AI model or technology stack. From here, the next logical artifact would be an OceanicOS Specification v1.0, defining the technical standards, interfaces, and compatibility requirements that implement this charter.*
+
+---
+
+## How this maps to what is built
+
+Much of this vision is already realised and verified in this repository — the reference implementation:
+
+| Charter element | Realised today by |
+|-----------------|-------------------|
+| Reality before assumption / Evidence before conclusion | [Reality Engine](core/reality-engine.js) (0007): observations verified before decisions may ground on them |
+| Universal Architecture (Reality → … → Better Reality) | the [Kernel](core/oceanic.js) (0011) assembling Reality → Knowledge → [Reasoning](core/reason.js) → [Planning](core/plan.js) → Decision → [Evaluation](core/evaluate.js) → [Learning](core/learn.js) over one Memory Ocean |
+| Universal Builder Cycle | the build doctrine + [Continuous Verification](core/verify-all.html) (0013) — every capability tested, documented, recorded in [BUILD_LOG.md](BUILD_LOG.md) before release |
+| Stage 5 — Collaboration (incl. Governance) | ✅ complete: [Identity](core/identity.js) · [Teams](core/teams.js) · [Organizations](core/organizations.js) · [Communities](core/communities.js) · [Shared Knowledge](core/shared-knowledge.js) · [Governance](core/governance.js) (0043 — proposal → review → ratify with quorum and standing-objection blocking) |
+| Kai — reference orchestrator | seeded by the [AI Agent](core/agent.js) (0021): observes, verifies, recommends — humans decide |
+| Governance (transparent review, version history) | [Governance](core/governance.js) (0043) + the append-only [Memory](core/memory.js) (0005) — history never erased |
+| Compatibility | 🌊 future: an OceanicOS Specification v1.0 + compatibility test suite is the named next artifact |
+| Stages 6–8 | 🌊 open water: Infrastructure · Ecosystem · Stewardship |
+
+See **[VISION.md](VISION.md)** for the full architecture map.
+
+---
+
+## Revision history
+
+- **r2 — 2026-07-10 (current):** "One Mission. Many Builders. Better Reality." — restructured around Mission / Identity / Constitutional Foundation / Universal Human Kernel / Kai / Universal Architecture / Builder Framework / Builder Cycle / Governance / Compatibility / Long-Term Vision / Final Builder Law. Received from the Operator.
+- **r1 — 2026-07-10:** Preamble + thirteen Articles + Governance + Closing Declaration. Received from the Operator; archived verbatim below.
+
+---
+
+## Archived — r1 (2026-07-10): Preamble + Thirteen Articles
+
+### Preamble
 
 OceanicOS is a living, platform-agnostic operating system for human and artificial intelligence collaboration.
 
@@ -21,7 +262,7 @@ OceanicOS belongs to no single model, company, cloud provider, language, or devi
 
 The system recognizes that every participant—human or AI—possesses incomplete knowledge. Therefore, continuous learning, transparency, and correction are fundamental operating principles rather than optional features.
 
-## Article I — Purpose
+### Article I — Purpose
 
 OceanicOS exists to:
 
@@ -31,7 +272,7 @@ OceanicOS exists to:
 - preserve knowledge for future generations
 - augment—not replace—human judgment
 
-## Article II — Core Principles
+### Article II — Core Principles
 
 OceanicOS shall operate according to these principles.
 
@@ -59,7 +300,7 @@ Confidence should never be presented as certainty.
 
 **Responsibility.** Humans remain accountable for significant decisions. AI assists. Humans decide.
 
-## Article III — Agnosticism
+### Article III — Agnosticism
 
 OceanicOS is independent of:
 
@@ -74,7 +315,7 @@ OceanicOS is independent of:
 
 Every component should be replaceable without compromising the integrity of the system.
 
-## Article IV — Living Architecture
+### Article IV — Living Architecture
 
 Every capability follows the same cycle:
 
@@ -98,7 +339,7 @@ Repeat
 
 The system evolves through iteration rather than replacement.
 
-## Article V — Knowledge
+### Article V — Knowledge
 
 Knowledge is organized as connected Drops.
 
@@ -113,7 +354,7 @@ Each Drop contains:
 
 Knowledge grows as a graph rather than isolated documents.
 
-## Article VI — Intelligence
+### Article VI — Intelligence
 
 OceanicOS supports multiple intelligences working together.
 
@@ -132,7 +373,7 @@ Examples include:
 
 No intelligence is assumed to be universally superior. Collaboration produces stronger outcomes than isolated specialization.
 
-## Article VII — Human Collaboration
+### Article VII — Human Collaboration
 
 People remain central.
 
@@ -146,7 +387,7 @@ OceanicOS should:
 
 Technology serves people. People do not serve technology.
 
-## Article VIII — Evidence
+### Article VIII — Evidence
 
 Every meaningful conclusion should trace back to evidence whenever possible.
 
@@ -160,7 +401,7 @@ Evidence may include:
 
 Claims without evidence should be labeled accordingly.
 
-## Article IX — Adaptation
+### Article IX — Adaptation
 
 The ecosystem continuously improves through:
 
@@ -173,7 +414,7 @@ The ecosystem continuously improves through:
 
 Evolution is continuous. Perfection is never assumed.
 
-## Article X — Security
+### Article X — Security
 
 Security is foundational.
 
@@ -189,7 +430,7 @@ The system should prioritize:
 
 Trust must be earned and continuously maintained.
 
-## Article XI — Ethics
+### Article XI — Ethics
 
 OceanicOS should be developed and used in ways that:
 
@@ -202,7 +443,7 @@ OceanicOS should be developed and used in ways that:
 
 Capabilities should not be intentionally directed toward deception, exploitation, or avoidable harm.
 
-## Article XII — Interoperability
+### Article XII — Interoperability
 
 OceanicOS is designed to connect with existing ecosystems.
 
@@ -219,7 +460,7 @@ Examples include:
 
 Integration is preferred over unnecessary duplication.
 
-## Article XIII — Continuous Becoming
+### Article XIII — Continuous Becoming
 
 Version numbers mark milestones. They do not define completion.
 
@@ -235,7 +476,7 @@ OceanicOS remains a living system that continuously:
 
 Every contribution becomes part of an evolving body of knowledge.
 
-## Governance
+### Governance (r1)
 
 The Charter evolves through documented revisions.
 
@@ -248,7 +489,7 @@ Changes should include:
 
 Earlier versions remain archived to preserve historical context and enable traceability.
 
-## Closing Declaration
+### Closing Declaration (r1)
 
 OceanicOS is not a destination but a framework for continuous improvement.
 
@@ -257,29 +498,3 @@ Its purpose is to help people and intelligent systems work together with greater
 Every observation is an opportunity to learn.
 Every correction is progress.
 Every contribution strengthens the whole.
-
----
-
-**Version:** Ω∞ OceanicOS Living Agnostic Charter v1.0
-
----
-
-## How this maps to what is built
-
-This agnostic vision is not aspirational-only — much of it is already realised and verified. A short map:
-
-| Agnostic Article | Realised today by |
-|------------------|-------------------|
-| II — Truth / Reality | [Reality Engine](core/reality-engine.js) (0007): observations carry a `verified` state; no belief is immune from revision (append-only `amend`) |
-| IV — Living Architecture | The build doctrine itself + [Continuous Verification](core/verify-all.html) (0013) |
-| V — Knowledge as Drops/graph | [Memory](core/memory.js) (0005) + [Knowledge Graph](core/graph.js) (0027) + grounds/provenance on every record |
-| VI — Multiple intelligences | [Intelligence stage](core/reason.js) (0028–0033): reasoning, planning, learning, recommendation, simulation, evaluation |
-| VII — Human collaboration | [Stage 5 Collaboration](BUILD_LOG.md): Identity, Teams, Organizations, Communities, Workspaces, Shared Knowledge |
-| VIII — Evidence | grounds / `source` / `meta.evidence` cited on every meaningful record |
-| IX — Adaptation | [Learning](core/learn.js) (0030) + [Evaluation](core/evaluate.js) (0033) |
-| X — Security | 🌊 Stage 8 (partly seeded by [Permissions](core/permissions.js) 0036 — least privilege over the API) |
-| XI — Ethics | 🌊 Stage 8 (planned); the ratified Charter already binds human final authority |
-| XII — Interoperability | zero-runtime UMD modules; the [API](core/api.js) (0017) and [SDK](core/sdk.js) (0020) |
-| XIII — Continuous Becoming | the Final Law — one verified drop at a time, forever |
-
-See **[VISION.md](VISION.md)** for the full architecture map and **[BUILD_LOG.md](BUILD_LOG.md)** for every verified capability.
