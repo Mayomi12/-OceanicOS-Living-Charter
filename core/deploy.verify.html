@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Deployment</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Deployment</b> (build 0049, Stage 6 · Infrastructure). A live release delivered to a named target and <b>booted there</b> — snapshot → deliver → boot → record, halting on first failure. Composes CI/CD (0048) · Automation (0016) · the Kernel (0011) · Memory (0005). Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — this ocean, deployed to two environments</h2>
+<table id="dep"><tr><th>Target</th><th>Version</th><th>Records</th><th>Status</th></tr></table>
+<div id="depline" class="note"></div>
+<div class="note">The whole system is one Memory snapshot — deliver it, boot a fresh kernel over it, and the environment is alive. A failed deploy leaves the ledger untouched; the operational log holds the failure. There is no undeploy — environments move forward by deploying again.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="automation.js"></script>
+<script src="versioning.js"></script>
+<script src="graph.js"></script>
+<script src="reason.js"></script>
+<script src="learn.js"></script>
+<script src="evaluate.js"></script>
+<script src="monitor.js"></script>
+<script src="cicd.js"></script>
+<script src="deploy.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function makeStorage(){ var d = {}; return { getItem: function(k){ return (k in d) ? d[k] : null; }, setItem: function(k,v){ d[k] = v; }, _raw: d }; }
+function rig(opts){
+  opts = opts || {};
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "dep-test" });
+  os.start();
+  var log = OceanicCore.createLogger({ now: clock });
+  var o = os.reality.observe({ observation: "fair winds on the sound", source: "watch" });
+  os.reality.verify(o.meta.oid);
+  var M = OceanicCore.createMonitor({ oceanic: os, logger: log });
+  var R = OceanicCore.createCICD({ oceanic: os, monitor: M, verify: function(){ return { verdict: "PASS", total: 42, passed: 42, failed: 0 }; }, logger: log });
+  if (!opts.unreleased) R.release({ notes: "maiden voyage" }); // v1.0.0
+  var D = OceanicCore.createDeployment({ oceanic: os, cicd: R, logger: log });
+  return { os: os, log: log, R: R, D: D };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Deployment (build 0049)" });
+
+suite.test("factory demands its collaborators and exposes the surface", function(a){
+  a.equal(typeof OceanicCore.createDeployment, "function");
+  var f = rig();
+  a.throws(function(){ OceanicCore.createDeployment({}); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createDeployment({ oceanic: f.os }); }, "no cicd");
+  ["addTarget","targets","deploy","history","active","status"].forEach(function(fn){ a.equal(typeof f.D[fn], "function", "exposes " + fn); });
+  a.throws(function(){ f.D.addTarget("", makeStorage()); }, "target needs a name");
+  a.throws(function(){ f.D.addTarget("bad", {}); }, "target needs getItem/setItem");
+});
+
+suite.test("a live release deploys: snapshot → deliver → boot → record, all green", function(a){
+  var f = rig();
+  f.D.addTarget("staging", makeStorage());
+  var before = f.os.memory.status().count;
+  var r = f.D.deploy("staging");
+  a.equal(r.ok, true);
+  a.equal(r.version, "1.0.0");
+  a.deepEqual(r.report.steps.map(function(s){ return s.name + ":" + s.status; }),
+    ["snapshot:ok","deliver:ok","boot:ok","record:ok"]);
+  a.equal(r.booted.records, before, "the target came up with every record");
+  a.ok(r.booted.pulse >= 1, "and it beat on boot");
+  var act = f.D.active("staging");
+  a.equal(act.version, "1.0.0"); a.equal(act.status, "deployed");
+});
+
+suite.test("the deployed environment is independently ALIVE and workable", function(a){
+  var f = rig();
+  var shore = makeStorage();
+  f.D.addTarget("shore", shore);
+  f.D.deploy("shore");
+  // stand up the environment ourselves, as its own operator would
+  var env = OceanicCore.createOceanic({ storage: shore, storageKey: "oceanicos.shore", manual: true, name: "shore" });
+  env.start();
+  a.equal(env.reality.observations(false).length, 1, "the verified observation arrived");
+  a.equal(env.memory.recall({ type: "release" }).length, 1, "so did the release ledger");
+  var o = env.reality.observe({ observation: "shore life continues", source: "shore" });
+  a.ok(o.meta.oid, "the environment accepts new reality of its own");
+});
+
+suite.test("nothing released → deployment refuses", function(a){
+  var f = rig({ unreleased: true });
+  f.D.addTarget("staging", makeStorage());
+  a.throws(function(){ f.D.deploy("staging"); }, "a deployment ships a LIVE release");
+});
+
+suite.test("an unknown target refuses", function(a){
+  var f = rig();
+  a.throws(function(){ f.D.deploy("production"); }, "no target named production");
+});
+
+suite.test("after a yank, the next deploy ships the highest LIVE label", function(a){
+  var f = rig();
+  f.R.release({ level: "minor" }); // 1.1.0
+  f.R.yank("1.1.0", "bad drop");
+  f.D.addTarget("staging", makeStorage());
+  var r = f.D.deploy("staging");
+  a.equal(r.version, "1.0.0", "the yanked 1.1.0 is not a deployable claim");
+});
+
+suite.test("a target that cannot take delivery fails the deploy — ledger untouched", function(a){
+  var f = rig();
+  f.D.addTarget("bad-disk", { getItem: function(){ return null; }, setItem: function(){ throw new Error("disk full"); } });
+  var before = f.os.memory.recall({ type: "deployment" }).length;
+  var r = f.D.deploy("bad-disk");
+  a.equal(r.ok, false);
+  a.equal(r.version, null);
+  a.equal(r.report.steps[1].status, "failed", "deliver failed");
+  a.equal(r.report.steps[2].status, "skipped", "boot never ran");
+  a.equal(r.report.steps[3].status, "skipped", "nothing recorded");
+  a.equal(f.os.memory.recall({ type: "deployment" }).length, before, "the ledger is untouched");
+  a.ok(f.log.status().counts.error >= 1, "the failure lives in the operational log");
+});
+
+suite.test("a target that corrupts the snapshot fails the BOOT check", function(a){
+  var f = rig();
+  f.D.addTarget("corrupt", { getItem: function(){ return "{not json"; }, setItem: function(){ } });
+  var r = f.D.deploy("corrupt");
+  a.equal(r.ok, false);
+  a.equal(r.report.steps[2].status, "failed", "boot refused: " + r.report.steps[2].error);
+  a.equal(f.os.memory.recall({ type: "deployment" }).length, 0);
+});
+
+suite.test("targets are tracked independently", function(a){
+  var f = rig();
+  f.D.addTarget("staging", makeStorage());
+  f.D.addTarget("production", makeStorage());
+  f.D.deploy("staging");
+  f.R.release({ level: "minor" }); // 1.1.0
+  f.D.deploy("production");
+  var s = f.D.status();
+  a.equal(s.targets.staging, "1.0.0", "staging holds the older deploy");
+  a.equal(s.targets.production, "1.1.0", "production got the new one");
+  a.equal(s.deployments, 2);
+  a.deepEqual(f.D.targets(), ["production", "staging"]);
+});
+
+suite.test("environments move forward — a redeploy is a new record, not a rewrite", function(a){
+  var f = rig();
+  f.D.addTarget("staging", makeStorage());
+  f.D.deploy("staging");
+  f.R.release({ level: "patch" }); // 1.0.1
+  f.D.deploy("staging");
+  a.equal(f.D.history().length, 2, "both deployments in history");
+  a.equal(f.D.active("staging").version, "1.0.1", "active is the latest");
+});
+
+suite.test("a deployment record carries its evidence, and only that is added at home", function(a){
+  var f = rig();
+  f.D.addTarget("staging", makeStorage());
+  var before = f.os.memory.status().count;
+  f.D.deploy("staging");
+  a.equal(f.os.memory.status().count, before + 1, "exactly one new record at home: the deployment");
+  var d = f.D.history()[0];
+  a.equal(d.target, "staging");
+  a.equal(d.version, "1.0.0");
+  a.equal(d.records, before, "how much ocean was shipped");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Deployment";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = rig();
+  f.D.addTarget("staging", makeStorage());
+  f.D.addTarget("production", makeStorage());
+  f.D.deploy("staging");
+  f.R.release({ level: "minor", notes: "northern charts" });
+  f.D.deploy("staging");
+  f.D.deploy("production");
+  var table = document.getElementById("dep");
+  f.D.history().forEach(function(d){
+    var row = table.insertRow();
+    row.insertCell().textContent = d.target;
+    row.insertCell().textContent = "v" + d.version;
+    row.insertCell().textContent = d.records;
+    var s = row.insertCell(); s.textContent = d.status.toUpperCase(); s.className = "pass";
+  });
+  var st = f.D.status();
+  document.getElementById("depline").textContent =
+    "active now — staging: v" + st.targets.staging + " · production: v" + st.targets.production +
+    " (" + st.deployments + " deployments recorded, every one booted and counted before it was called deployed)";
+})();
+</script>
+</body>
+</html>
