@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Identity</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .r-admin{color:#fb7185} .r-steward{color:#34d399} .r-contributor{color:#38bdf8} .r-observer{color:#8fb3c4}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Identity</b> (build 0035, Stage 5 · Collaboration). The register of who acts. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — the crew register</h2>
+<table id="crew"><tr><th>ID</th><th>Name</th><th>Role</th><th>Authority</th></tr></table>
+<div class="note">Actors live in the one Memory Ocean — append-only. No role makes an actor an authority over humans (Charter, Article I §3).</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="identity.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function fresh(){ return OceanicCore.createIdentity({ oceanic: OceanicCore.createOceanic({ now: clock, manual: true, name: "id-test" }) }); }
+
+var suite = OceanicCore.createVerifier({ name: "Identity (build 0035)" });
+
+suite.test("factory requires an OceanicOS or Memory; publishes the role ladder", function(a){
+  a.equal(typeof OceanicCore.createIdentity, "function");
+  a.throws(function(){ OceanicCore.createIdentity({}); });
+  a.deepEqual(OceanicCore.createIdentity.ROLES, ["observer","contributor","steward","admin"]);
+  a.ok(OceanicCore.createIdentity.authority("admin") > OceanicCore.createIdentity.authority("observer"), "admin outranks observer");
+  var I = fresh();
+  ["register","get","has","list","byRole","setRole","retire","signIn","signOut","current","status"].forEach(function(fn){
+    a.equal(typeof I[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("register() creates an active actor with a slug id derived from the name", function(a){
+  var I = fresh();
+  var kai = I.register({ name: "Kai", role: "admin" });
+  a.deepEqual(kai, { id: "kai", name: "Kai", role: "admin", status: "active" });
+  a.equal(I.register({ name: "The Navigator", role: "steward" }).id, "the-navigator", "slugified");
+  a.equal(I.register({ name: "Lookout" }).role, "contributor", "default role");
+});
+
+suite.test("an explicit id can be given, and duplicate ids are refused", function(a){
+  var I = fresh();
+  a.equal(I.register({ name: "Kai Prime", id: "kai" }).id, "kai");
+  a.throws(function(){ I.register({ name: "Another", id: "Kai" }); }, "id taken (case/slug-insensitive)");
+});
+
+suite.test("register() validates name and role", function(a){
+  var I = fresh();
+  a.throws(function(){ I.register({ role: "admin" }); }, "no name");
+  a.throws(function(){ I.register({ name: "X", role: "emperor" }); }, "bad role");
+});
+
+suite.test("get / has / list / byRole read the register", function(a){
+  var I = fresh();
+  I.register({ name: "Kai", role: "admin" });
+  I.register({ name: "Nav", role: "steward" });
+  I.register({ name: "Hand", role: "contributor" });
+  a.equal(I.get("kai").role, "admin");
+  a.equal(I.has("kai"), true);
+  a.equal(I.has("ghost"), false);
+  a.equal(I.list().length, 3);
+  a.deepEqual(I.byRole("steward").map(function(x){ return x.name; }), ["Nav"]);
+  a.throws(function(){ I.byRole("nonsense"); });
+});
+
+suite.test("setRole() changes a role by an open amendment (append-only, id kept)", function(a){
+  var I = fresh();
+  var os = I; // identity over its own ocean
+  I.register({ name: "Hand", role: "contributor" });
+  var upd = I.setRole("hand", "steward");
+  a.equal(upd.role, "steward");
+  a.equal(upd.id, "hand", "same identity");
+  a.equal(I.get("hand").role, "steward");
+  a.throws(function(){ I.setRole("ghost", "admin"); }, "unknown actor");
+  a.throws(function(){ I.setRole("hand", "emperor"); }, "bad role");
+});
+
+suite.test("retire() deactivates without deleting; retired actors leave the active list", function(a){
+  var I = fresh();
+  I.register({ name: "Kai", role: "admin" });
+  I.register({ name: "Lookout", role: "observer" });
+  a.equal(I.retire("lookout").status, "retired");
+  a.equal(I.has("lookout"), false, "no longer active");
+  a.equal(I.get("lookout").status, "retired", "but still on the record");
+  a.equal(I.list().length, 1, "active list shrank");
+  a.equal(I.list(true).length, 2, "still there with includeRetired");
+  a.throws(function(){ I.retire("lookout"); }, "already retired");
+  a.throws(function(){ I.register({ name: "New", id: "lookout" }); }, "a retired id is still taken");
+});
+
+suite.test("a live session tracks who is acting; signOut clears it", function(a){
+  var I = fresh();
+  I.register({ name: "Kai", role: "admin" });
+  a.equal(I.current(), null, "nobody signed in at first");
+  a.equal(I.signIn("kai").name, "Kai");
+  a.equal(I.current().id, "kai");
+  a.equal(I.signOut(), null);
+  a.equal(I.current(), null);
+  a.throws(function(){ I.signIn("ghost"); }, "cannot sign in as a non-actor");
+});
+
+suite.test("retiring the signed-in actor signs them out", function(a){
+  var I = fresh();
+  I.register({ name: "Kai", role: "admin" });
+  I.signIn("kai");
+  I.retire("kai");
+  a.equal(I.current(), null, "a retired actor cannot remain signed in");
+  a.throws(function(){ I.signIn("kai"); }, "and cannot sign back in");
+});
+
+suite.test("actors persist in the one Memory Ocean, append-only", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  var I = OceanicCore.createIdentity({ oceanic: os });
+  I.register({ name: "Kai", role: "contributor" });
+  I.setRole("kai", "admin");     // +1 amendment
+  I.retire("kai");                // +1 amendment
+  a.equal(os.memory.recall({ type: "actor" }).length, 1, "one current actor record");
+  a.equal(os.memory.recall({ type: "actor", includeSuperseded: true }).length, 3, "every version kept");
+});
+
+suite.test("status() summarises the register and the current session", function(a){
+  var I = fresh();
+  I.register({ name: "Kai", role: "admin" });
+  I.register({ name: "Nav", role: "steward" });
+  I.retire("nav");
+  I.signIn("kai");
+  a.deepEqual(I.status(), { actors: 1, retired: 1, byRole: { admin: 1 }, current: "kai" });
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Identity";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var I = fresh();
+  I.register({ name: "Kai", role: "admin" });
+  I.register({ name: "The Navigator", role: "steward" });
+  I.register({ name: "Deck Hand", role: "contributor" });
+  I.register({ name: "Lookout", role: "observer" });
+  var table = document.getElementById("crew");
+  I.list().forEach(function(aObj){
+    var row = table.insertRow();
+    row.insertCell().textContent = aObj.id;
+    row.insertCell().textContent = aObj.name;
+    var c = row.insertCell(); c.textContent = aObj.role.toUpperCase(); c.className = "r-" + aObj.role;
+    row.insertCell().textContent = "▲".repeat(OceanicCore.createIdentity.authority(aObj.role) + 1);
+  });
+})();
+</script>
+</body>
+</html>
