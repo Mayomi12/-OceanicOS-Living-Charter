@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — CI/CD</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold} .warn{color:#fbbf24;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .yanked{color:#fb7185}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>CI/CD</b> (build 0048, Stage 6 · Infrastructure). The release pipeline: <b>verify → gate → version → record</b>, refusing to ship anything unverified or unhealthy. Composes Automation (0016) · Monitoring (0047) · Versioning (0015) · Memory (0005). Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — a release history with one blocked attempt and one yank</h2>
+<table id="rel"><tr><th>Version</th><th>Level</th><th>Status</th><th>Notes / reason</th><th>Gate at release</th></tr></table>
+<div id="relline" class="note"></div>
+<div class="note">There is no rollback and no delete: a bad release is YANKED by open amendment — visible forever — and followed by a better one. History is the changelog.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="automation.js"></script>
+<script src="versioning.js"></script>
+<script src="graph.js"></script>
+<script src="reason.js"></script>
+<script src="learn.js"></script>
+<script src="evaluate.js"></script>
+<script src="monitor.js"></script>
+<script src="cicd.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function rig(verifyResult){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "cicd-test" });
+  os.start();
+  var log = OceanicCore.createLogger({ now: clock });
+  var o = os.reality.observe({ observation: "steady seas", source: "watch" });
+  os.reality.verify(o.meta.oid);
+  var M = OceanicCore.createMonitor({ oceanic: os, logger: log });
+  var verify = typeof verifyResult === "function" ? verifyResult
+    : function(){ return verifyResult || { verdict: "PASS", total: 41, passed: 41, failed: 0 }; };
+  var R = OceanicCore.createCICD({ oceanic: os, monitor: M, verify: verify, logger: log });
+  return { os: os, log: log, M: M, R: R };
+}
+
+var suite = OceanicCore.createVerifier({ name: "CI/CD (build 0048)" });
+
+suite.test("factory demands its collaborators and exposes the surface", function(a){
+  a.equal(typeof OceanicCore.createCICD, "function");
+  var f = rig();
+  a.throws(function(){ OceanicCore.createCICD({}); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createCICD({ oceanic: f.os }); }, "no monitor");
+  a.throws(function(){ OceanicCore.createCICD({ oceanic: f.os, monitor: f.M }); }, "no verify function");
+  a.throws(function(){ OceanicCore.createCICD({ oceanic: f.os, monitor: f.M, verify: function(){}, initial: "not-semver" }); }, "bad initial version");
+  ["release","current","history","yank","status"].forEach(function(fn){ a.equal(typeof f.R[fn], "function", "exposes " + fn); });
+});
+
+suite.test("the first release ships the initial version through all four steps", function(a){
+  var f = rig();
+  a.equal(f.R.current(), null, "nothing released yet");
+  var r = f.R.release({ notes: "maiden voyage" });
+  a.equal(r.ok, true);
+  a.equal(r.version, "1.0.0");
+  a.deepEqual(r.report.steps.map(function(s){ return s.name + ":" + s.status; }),
+    ["verify:ok","gate:ok","version:ok","record:ok"]);
+  a.equal(f.R.current(), "1.0.0");
+  a.equal(f.os.memory.recall({ type: "release" }).length, 1, "the release is in the ocean");
+});
+
+suite.test("subsequent releases bump semver by level", function(a){
+  var f = rig();
+  f.R.release({});
+  a.equal(f.R.release({ level: "patch" }).version, "1.0.1");
+  a.equal(f.R.release({ level: "minor" }).version, "1.1.0");
+  a.equal(f.R.release({ level: "major" }).version, "2.0.0");
+  a.equal(f.R.current(), "2.0.0");
+  a.equal(f.R.history().length, 4);
+  a.throws(function(){ f.R.release({ level: "gigantic" }); }, "unknown level refused");
+});
+
+suite.test("FAILED VERIFICATION halts the pipeline — nothing ships, nothing is recorded", function(a){
+  var f = rig({ verdict: "FAIL", total: 41, passed: 39, failed: 2 });
+  var r = f.R.release({});
+  a.equal(r.ok, false);
+  a.equal(r.version, null);
+  a.equal(r.report.steps[0].status, "failed");
+  a.ok(r.report.steps[0].error.indexOf("release forbidden") >= 0);
+  ["gate","version","record"].forEach(function(name, i){
+    a.equal(r.report.steps[i+1].status, "skipped", name + " never ran");
+  });
+  a.equal(f.os.memory.recall({ type: "release" }).length, 0, "the ledger is untouched");
+});
+
+suite.test("a BLOCKED GATE halts the pipeline — an unhealthy system cannot ship", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "a rumor", source: "dockside" });
+  f.os.decisions.propose({ question: "act?", options: ["y","n"], grounds: [o.meta.oid] });
+  f.os.reality.reject(o.meta.oid); // something now rests on rejected ground → SOUND fails
+  var r = f.R.release({});
+  a.equal(r.ok, false);
+  a.equal(r.report.steps[0].status, "ok", "verification passed");
+  a.equal(r.report.steps[1].status, "failed", "the gate refused");
+  a.ok(r.report.steps[1].error.indexOf("SOUND") >= 0, "the blocker is named: " + r.report.steps[1].error);
+  a.equal(f.os.memory.recall({ type: "release" }).length, 0);
+});
+
+suite.test("a verify() that THROWS is caught — release() itself never throws", function(a){
+  var f = rig(function(){ throw new Error("the CV runner crashed"); });
+  var r = f.R.release({});
+  a.equal(r.ok, false);
+  a.ok(r.report.steps[0].error.indexOf("crashed") >= 0);
+  a.equal(f.os.memory.recall({ type: "release" }).length, 0);
+});
+
+suite.test("a release record carries its evidence", function(a){
+  var f = rig();
+  f.R.release({ level: "patch", notes: "hardened the gate" });
+  var rec = f.R.history()[0];
+  a.equal(rec.version, "1.0.0");
+  a.equal(rec.status, "released");
+  a.equal(rec.notes, "hardened the gate");
+  a.deepEqual(rec.verification, { total: 41, passed: 41, failed: 0 }, "what was verified");
+  a.ok(rec.gate.indexOf("RELEASE PERMITTED") === 0, "and the gate's verdict at that moment");
+});
+
+suite.test("yank marks a bad release openly — never erases it", function(a){
+  var f = rig();
+  f.R.release({});                       // 1.0.0
+  f.R.release({ level: "minor" });       // 1.1.0
+  a.throws(function(){ f.R.yank("1.1.0"); }, "a yank must say why");
+  a.throws(function(){ f.R.yank("9.9.9", "ghost"); }, "unknown version refused");
+  var y = f.R.yank("1.1.0", "regression in the gate");
+  a.equal(y.status, "yanked");
+  a.equal(y.reason, "regression in the gate");
+  a.equal(f.R.current(), "1.0.0", "current falls back to the highest live release");
+  a.equal(f.R.history().length, 2, "the yanked release is still in history");
+  a.throws(function(){ f.R.yank("1.1.0", "again"); }, "cannot yank twice");
+  a.ok(f.os.memory.status().superseded >= 1, "the yank is an open amendment — original preserved");
+});
+
+suite.test("releasing after a yank continues from the highest LIVE version", function(a){
+  var f = rig();
+  f.R.release({});                        // 1.0.0
+  f.R.release({ level: "major" });        // 2.0.0
+  f.R.yank("2.0.0", "shipped too soon");
+  var r = f.R.release({ level: "minor" }); // bumps from 1.0.0, not 2.0.0
+  a.equal(r.version, "1.1.0");
+  a.equal(f.R.current(), "1.1.0");
+});
+
+suite.test("warnings do not stop a ship — cautions ride along, failures do not", function(a){
+  var f = rig();
+  var quiet = OceanicCore.createMonitor({ oceanic: f.os }); // no logger → LOG warns
+  var R = OceanicCore.createCICD({ oceanic: f.os, monitor: quiet, verify: function(){ return true; } });
+  var r = R.release({});
+  a.equal(r.ok, true, "a warned system still releases");
+  a.ok(r.gate.cautions.length >= 1, "…with the caution on the record");
+});
+
+suite.test("the pipeline leaves evidence in the operational log", function(a){
+  var f = rig();
+  var before = f.log.status().counts.info;
+  f.R.release({});
+  a.ok(f.log.status().counts.info > before, "each step logged on success");
+  var f2 = rig({ verdict: "FAIL", total: 1, passed: 0, failed: 1 });
+  f2.R.release({});
+  a.ok(f2.log.status().counts.error >= 1, "and a failure logs at error");
+});
+
+suite.test("status() sums the ledger", function(a){
+  var f = rig();
+  f.R.release({}); f.R.release({ level: "patch" });
+  f.R.yank("1.0.1", "bad drop");
+  a.deepEqual(f.R.status(), { releases: 2, yanked: 1, current: "1.0.0", initial: "1.0.0" });
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ CI/CD";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = rig();
+  f.R.release({ notes: "maiden voyage" });
+  f.R.release({ level: "minor", notes: "adds the northern charts" });
+  f.R.yank("1.1.0", "chart datum was wrong");
+  f.R.release({ level: "minor", notes: "northern charts, corrected datum" });
+  // one blocked attempt for the record
+  var o = f.os.reality.observe({ observation: "a rumor", source: "dockside" });
+  f.os.decisions.propose({ question: "act?", options: ["y","n"], grounds: [o.meta.oid] });
+  f.os.reality.reject(o.meta.oid);
+  var blocked = f.R.release({ level: "major", notes: "should not ship" });
+  var table = document.getElementById("rel");
+  f.R.history().forEach(function(r){
+    var row = table.insertRow();
+    row.insertCell().textContent = "v" + r.version;
+    row.insertCell().textContent = r.level;
+    var s = row.insertCell(); s.textContent = r.status.toUpperCase(); s.className = r.status === "released" ? "pass" : "yanked";
+    row.insertCell().textContent = r.status === "yanked" ? (r.notes + " — YANKED: " + r.reason) : (r.notes || "—");
+    row.insertCell().textContent = r.gate;
+  });
+  document.getElementById("relline").textContent =
+    "current: v" + f.R.current() + " · the attempted major release was " +
+    (blocked.ok ? "SHIPPED (bug!)" : "refused (" + blocked.report.steps[1].error + ")");
+})();
+</script>
+</body>
+</html>
