@@ -236,7 +236,7 @@ Much of this vision is already realised and verified in this repository — the 
 | Stage 5 — Collaboration (incl. Governance) | ✅ complete: [Identity](core/identity.js) · [Teams](core/teams.js) · [Organizations](core/organizations.js) · [Communities](core/communities.js) · [Shared Knowledge](core/shared-knowledge.js) · [Governance](core/governance.js) (0043 — proposal → review → ratify with quorum and standing-objection blocking) |
 | Kai — reference orchestrator | seeded by the [AI Agent](core/agent.js) (0021): observes, verifies, recommends — humans decide |
 | Governance (transparent review, version history) | [Governance](core/governance.js) (0043) + the append-only [Memory](core/memory.js) (0005) — history never erased |
-| Compatibility | 🌊 future: an OceanicOS Specification v1.0 + compatibility test suite is the named next artifact |
+| Compatibility | ✅ [SPECIFICATION.md](SPECIFICATION.md) + [core/compat.js](core/compat.js) (0045): the published standards and the executable compatibility tests — the reference implementation reports fully compatible (level 3) |
 | Stages 6–8 | 🌊 open water: Infrastructure · Ecosystem · Stewardship |
 
 See **[VISION.md](VISION.md)** for the full architecture map.

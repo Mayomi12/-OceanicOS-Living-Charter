@@ -19,7 +19,8 @@ system is **[core/verify-all.html](core/verify-all.html)** — currently **30/30
 
 ### CHARTER
 - **Living Charter / Constitution** — [Ω∞ OceanicOS Living Charter.md](Ω∞%20OceanicOS%20Living%20Charter.md) ✅ (v1.0.0, ratified) — the operational law
-- **Living Agnostic Charter** — [AGNOSTIC_CHARTER.md](AGNOSTIC_CHARTER.md) ✅ (v1.0) — the platform-agnostic ecosystem vision (13 Articles); companion to, not a replacement for, the ratified Charter
+- **Living Agnostic Charter** — [AGNOSTIC_CHARTER.md](AGNOSTIC_CHARTER.md) ✅ (v1.0, r2 current + r1 archived) — the platform-agnostic ecosystem vision; companion to, not a replacement for, the ratified Charter
+- **Specification v1.0** — [SPECIFICATION.md](SPECIFICATION.md) ✅ (0045) — the published standards behind "OceanicOS Compatible", with the executable checker [core/compat.js](core/compat.js)
 - Principles · Universal Laws · Ethics · Stewardship · Version History — held in the Charter's Articles I–VII and Amendment Log ✅
 - This **Vision / Maximum Foundation** map — VISION.md ✅
 

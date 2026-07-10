@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Compatibility</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .lvl{color:#38bdf8}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Compatibility</b> (build 0045, Stage 0 · Standards). The executable tests behind "OceanicOS Compatible" — the <a href="../SPECIFICATION.md" style="color:#38bdf8">Specification</a>'s requirements as verdicts, not claims. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — the reference implementation's compatibility report</h2>
+<table id="report"><tr><th>Req</th><th>Level</th><th>Requirement</th><th>Verdict</th></tr></table>
+<div id="reportline" class="note"></div>
+<div class="note">The checker probes behavior on fresh instances handed over as factories — it writes nothing to any real ocean. Any implementation in any language that meets the contract passes; that is the agnosticism the Charter asks for.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="compat.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+
+/* the reference implementation, offered as a candidate */
+function referenceCandidate(level){
+  return {
+    level: level || 3,
+    createMemory: function(){ return OceanicCore.createMemory({ now: clock }); },
+    createOceanic: function(){ return OceanicCore.createOceanic({ now: clock, manual: true, name: "compat-ref" }); },
+    verification: { beacon: true, suite: "core/verify-all.html" }
+  };
+}
+
+/* a fake memory built on the real one, with an injected flaw */
+function memoryWithDelete(){
+  var m = OceanicCore.createMemory({ now: clock });
+  return { remember: m.remember, amend: m.amend, get: m.get, recall: m.recall, timeline: m.timeline,
+           "delete": function(){ } };
+}
+function memoryThatErasesHistory(){
+  var rows = [];
+  return {
+    remember: function(e){ var r = { id: "f-" + (rows.length+1), type: e.type, body: e.body, source: e.source||null, confidence: e.confidence||"medium", meta: e.meta||null }; rows.push(r); return r; },
+    amend: function(id, e){ // REWRITES in place — the flaw: history is gone
+      for (var i=0;i<rows.length;i++) if (rows[i].id===id){ rows[i] = { id: "f-" + (rows.length+1), type: e.type, body: e.body, source: e.source||null, confidence: e.confidence||"medium", meta: e.meta||null }; return rows[i]; }
+      throw new Error("no record " + id);
+    },
+    recall: function(q){ q=q||{}; return rows.filter(function(r){ return !q.type || r.type===q.type; }); }
+  };
+}
+/* a fake kernel whose decide() skips the verification gate */
+function kernelThatSkipsVerification(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "compat-broken" });
+  return { memory: os.memory, reality: os.reality,
+           decisions: { propose: os.decisions.propose,
+                        decide: function(did, choice){ return { meta: { did: did, choice: choice, status: "decided" } }; } } };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Compatibility (build 0045)" });
+
+suite.test("factory exposes check, report and requirements; check guards its input", function(a){
+  a.equal(typeof OceanicCore.createCompatibility, "function");
+  var K = OceanicCore.createCompatibility();
+  ["check","report","requirements"].forEach(function(fn){ a.equal(typeof K[fn], "function", "exposes " + fn); });
+  a.throws(function(){ K.check(); }, "no candidate");
+  a.throws(function(){ K.report({ level: 7, createMemory: function(){} }); }, "an impossible level claim");
+});
+
+suite.test("requirements() publishes the spec list — unique ids, levels 1..3", function(a){
+  var K = OceanicCore.createCompatibility();
+  var reqs = K.requirements();
+  a.equal(reqs.length, 7);
+  var ids = {};
+  reqs.forEach(function(r){
+    a.ok(!ids[r.id], "id " + r.id + " is unique"); ids[r.id] = 1;
+    a.ok(r.level >= 1 && r.level <= 3, r.id + " has a level");
+    a.ok(typeof r.requirement === "string" && r.requirement.length > 10, r.id + " states its requirement");
+  });
+});
+
+suite.test("the REFERENCE implementation is fully compatible (level 3, all checks pass)", function(a){
+  var K = OceanicCore.createCompatibility();
+  var rep = K.report(referenceCandidate(3));
+  a.equal(rep.failed, 0, "no check fails: " + JSON.stringify(rep.checks.filter(function(c){return c.verdict!=="PASS";})));
+  a.equal(rep.passed, 7);
+  a.equal(rep.achieved, 3);
+  a.equal(rep.compatible, true);
+});
+
+suite.test("a memory WITH a delete() fails MEM-2 — and only MEM-2", function(a){
+  var K = OceanicCore.createCompatibility();
+  var checks = K.check({ createMemory: memoryWithDelete });
+  var byId = {}; checks.forEach(function(c){ byId[c.id] = c; });
+  a.equal(byId["MEM-1"].verdict, "PASS");
+  a.equal(byId["MEM-2"].verdict, "FAIL", "the destructive operation is caught");
+  a.ok(byId["MEM-2"].detail.indexOf("delete") >= 0, "and named in the detail");
+  a.equal(byId["MEM-3"].verdict, "PASS");
+});
+
+suite.test("a memory that REWRITES history fails MEM-3", function(a){
+  var K = OceanicCore.createCompatibility();
+  var checks = K.check({ createMemory: memoryThatErasesHistory });
+  var byId = {}; checks.forEach(function(c){ byId[c.id] = c; });
+  a.equal(byId["MEM-1"].verdict, "PASS", "round-trip is fine");
+  a.equal(byId["MEM-2"].verdict, "PASS", "no destructive op");
+  a.equal(byId["MEM-3"].verdict, "FAIL", "but erased history is caught");
+});
+
+suite.test("a kernel that decides on unverified grounds fails KRN-2", function(a){
+  var K = OceanicCore.createCompatibility();
+  var checks = K.check({ createOceanic: kernelThatSkipsVerification });
+  var byId = {}; checks.forEach(function(c){ byId[c.id] = c; });
+  a.equal(byId["KRN-1"].verdict, "PASS", "the status machine is intact");
+  a.equal(byId["KRN-2"].verdict, "FAIL", "verification-before-acceptance is broken and caught");
+  a.equal(byId["KRN-3"].verdict, "PASS", "history is intact");
+});
+
+suite.test("a memory-only candidate reaches level 1 — kernel checks fail with a clear reason", function(a){
+  var K = OceanicCore.createCompatibility();
+  var rep = K.report({ level: 1, createMemory: function(){ return OceanicCore.createMemory({ now: clock }); } });
+  a.equal(rep.achieved, 1);
+  a.equal(rep.compatible, true, "compatible at its CLAIMED level");
+  var krn = rep.checks.filter(function(c){ return c.level === 2; });
+  krn.forEach(function(c){ a.equal(c.verdict, "FAIL"); a.ok(c.detail.indexOf("createOceanic") >= 0, c.id + " says what is missing"); });
+});
+
+suite.test("an over-claim is refused: level 3 claimed without a beacon → not compatible", function(a){
+  var K = OceanicCore.createCompatibility();
+  var cand = referenceCandidate(3);
+  delete cand.verification;
+  var rep = K.report(cand);
+  a.equal(rep.achieved, 2, "still kernel-compatible");
+  a.equal(rep.compatible, false, "but the level-3 claim does not hold");
+});
+
+suite.test("a candidate that throws while probed FAILS — the checker never throws mid-run", function(a){
+  var K = OceanicCore.createCompatibility();
+  var checks = K.check({ createMemory: function(){ throw new Error("boom at construction"); } });
+  var mem1 = checks.filter(function(c){ return c.id === "MEM-1"; })[0];
+  a.equal(mem1.verdict, "FAIL");
+  a.ok(mem1.detail.indexOf("boom") >= 0, "the failure is reported, not thrown");
+});
+
+suite.test("report arithmetic holds and levels are cumulative", function(a){
+  var K = OceanicCore.createCompatibility();
+  var rep = K.report(referenceCandidate(2));
+  a.equal(rep.passed + rep.failed, rep.checks.length);
+  a.equal(rep.claimed, 2);
+  a.ok(rep.achieved >= rep.claimed);
+  a.equal(rep.compatible, true);
+});
+
+suite.test("the checker is pure and repeatable — two runs, same verdicts, no shared state", function(a){
+  var K = OceanicCore.createCompatibility();
+  var r1 = K.report(referenceCandidate(3));
+  var r2 = K.report(referenceCandidate(3));
+  a.deepEqual(
+    r1.checks.map(function(c){ return c.id + ":" + c.verdict; }),
+    r2.checks.map(function(c){ return c.id + ":" + c.verdict; })
+  );
+  a.equal(r2.compatible, true);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Compatibility";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: the reference implementation's report ---- */
+(function(){
+  var K = OceanicCore.createCompatibility();
+  var rep = K.report(referenceCandidate(3));
+  var table = document.getElementById("report");
+  rep.checks.forEach(function(c){
+    var row = table.insertRow();
+    row.insertCell().textContent = c.id;
+    var l = row.insertCell(); l.textContent = "L" + c.level + " " + OceanicCore.createCompatibility.LEVELS[c.level]; l.className = "lvl";
+    row.insertCell().textContent = c.requirement;
+    var v = row.insertCell(); v.textContent = c.verdict; v.className = c.verdict === "PASS" ? "pass" : "fail";
+  });
+  document.getElementById("reportline").textContent =
+    "verdict: " + (rep.compatible ? "OceanicOS Compatible" : "NOT compatible") +
+    " — claimed level " + rep.claimed + ", achieved level " + rep.achieved +
+    " (" + rep.passed + "/" + rep.checks.length + " requirements met)";
+})();
+</script>
+</body>
+</html>
