@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Teams</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .confers{color:#34d399} .plain{color:#8fb3c4}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Teams</b> (build 0038, Stage 5 · Collaboration). Portable groups of actors that can confer a role. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — teams and the role each confers</h2>
+<table id="teams"><tr><th>Team</th><th>Members</th><th>Confers</th></tr></table>
+<div class="note">A team can carry a role from the Identity ladder that flows to every member — <code>roleOf(actor)</code> is the bridge Permissions (0036) reads, so a team of stewards makes its members stewards for what they may do. No team is authority over humans.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="identity.js"></script>
+<script src="permissions.js"></script>
+<script src="teams.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function fresh(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "team-test" });
+  var I = OceanicCore.createIdentity({ oceanic: os });
+  ["Kai","Nav","Hand"].forEach(function(n){ I.register({ name: n, role: "observer" }); });
+  return { os: os, I: I, T: OceanicCore.createTeams({ oceanic: os, identity: I }) };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Teams (build 0038)" });
+
+suite.test("factory requires an OceanicOS/Memory; a bad identity is refused; ROLES published", function(a){
+  a.equal(typeof OceanicCore.createTeams, "function");
+  a.throws(function(){ OceanicCore.createTeams({}); });
+  a.throws(function(){ OceanicCore.createTeams({ oceanic: fresh().os, identity: {} }); });
+  a.deepEqual(OceanicCore.createTeams.ROLES, ["observer","contributor","steward","admin"]);
+  var T = fresh().T;
+  ["form","join","leave","grant","disband","get","has","list","members","byMember","roleOf","status"].forEach(function(fn){
+    a.equal(typeof T[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("form() opens a team; a conferred role is optional (default null)", function(a){
+  var T = fresh().T;
+  var navs = T.form({ name: "Navigators", purpose: "chart passages", role: "steward" });
+  a.equal(navs.id, "navigators");
+  a.equal(navs.role, "steward");
+  a.deepEqual(navs.members, []);
+  a.equal(T.form({ name: "Deck Crew" }).role, null, "a plain group confers nothing");
+  a.throws(function(){ T.form({}); }, "needs a name");
+  a.throws(function(){ T.form({ name: "X", role: "emperor" }); }, "bad conferred role");
+  a.throws(function(){ T.form({ name: "Navigators" }); }, "duplicate id");
+});
+
+suite.test("join() adds registered actors; it is idempotent and validated", function(a){
+  var f = fresh();
+  var T = f.T; T.form({ name: "Navigators" });
+  T.join("navigators", "kai");
+  T.join("navigators", "kai");   // idempotent
+  T.join("navigators", "nav");
+  a.deepEqual(T.members("navigators"), ["kai", "nav"]);
+  a.throws(function(){ T.join("navigators", "ghost"); }, "no such actor");
+});
+
+suite.test("leave() removes a member; leaving a non-member is refused", function(a){
+  var T = fresh().T;
+  T.form({ name: "Navigators" });
+  T.join("navigators", "kai"); T.join("navigators", "nav");
+  T.leave("navigators", "nav");
+  a.deepEqual(T.members("navigators"), ["kai"]);
+  a.throws(function(){ T.leave("navigators", "hand"); }, "not a member");
+});
+
+suite.test("roleOf() returns the HIGHEST role any of an actor's teams confers", function(a){
+  var T = fresh().T;
+  T.form({ name: "Navigators", role: "steward" }); T.join("navigators", "kai");
+  T.form({ name: "Deck Crew", role: "contributor" }); T.join("deck-crew", "kai"); T.join("deck-crew", "hand");
+  T.form({ name: "Loose Group" }); T.join("loose-group", "hand"); // confers null
+  a.equal(T.roleOf("kai"), "steward", "steward beats contributor");
+  a.equal(T.roleOf("hand"), "contributor", "contributor beats null");
+  a.equal(T.roleOf("nav"), null, "on no team → nothing conferred");
+});
+
+suite.test("grant() raises or changes a team's conferred role", function(a){
+  var T = fresh().T;
+  T.form({ name: "Deck Crew" }); T.join("deck-crew", "hand");
+  a.equal(T.roleOf("hand"), null);
+  T.grant("deck-crew", "steward");
+  a.equal(T.roleOf("hand"), "steward", "the whole team is elevated at once");
+  a.throws(function(){ T.grant("deck-crew", "emperor"); }, "bad role");
+});
+
+suite.test("a team's conferred role bridges into Permissions", function(a){
+  var f = fresh();
+  var T = f.T, I = f.I;
+  var P = OceanicCore.createPermissions({ identity: I });
+  T.form({ name: "Stewards", role: "steward" }); T.join("stewards", "nav");
+  // nav's base role is observer and cannot verify…
+  I.signIn("nav");
+  a.equal(P.can("reality.verify"), false, "by base role, no");
+  // …but the team confers steward, which Permissions accepts when passed the team role
+  a.equal(P.can("reality.verify", { id: "nav", role: T.roleOf("nav") }), true, "by team role, yes");
+});
+
+suite.test("byMember() lists an actor's teams", function(a){
+  var T = fresh().T;
+  T.form({ name: "A" }); T.join("a", "kai");
+  T.form({ name: "B" }); T.join("b", "kai"); T.join("b", "nav");
+  a.deepEqual(T.byMember("kai").map(function(t){ return t.id; }).sort(), ["a", "b"]);
+  a.deepEqual(T.byMember("nav").map(function(t){ return t.id; }), ["b"]);
+  a.deepEqual(T.byMember("hand"), []);
+});
+
+suite.test("disband() is terminal and drops the team's conferred authority", function(a){
+  var T = fresh().T;
+  T.form({ name: "Stewards", role: "steward" }); T.join("stewards", "nav");
+  a.equal(T.roleOf("nav"), "steward");
+  T.disband("stewards");
+  a.equal(T.has("stewards"), false);
+  a.equal(T.roleOf("nav"), null, "a disbanded team confers nothing");
+  a.throws(function(){ T.join("stewards", "kai"); }, "cannot join a disbanded team");
+  a.throws(function(){ T.disband("stewards"); }, "already disbanded");
+  a.equal(T.list().length, 0);
+  a.equal(T.list(true).length, 1, "still on the record");
+});
+
+suite.test("teams are append-only in the Memory Ocean", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  var I = OceanicCore.createIdentity({ oceanic: os }); I.register({ name: "Kai", role: "observer" });
+  var T = OceanicCore.createTeams({ oceanic: os, identity: I });
+  T.form({ name: "Crew" });    // 1
+  T.join("crew", "kai");        // +1
+  T.grant("crew", "steward");   // +1
+  T.leave("crew", "kai");       // +1
+  a.equal(os.memory.recall({ type: "team" }).length, 1, "one current team");
+  a.equal(os.memory.recall({ type: "team", includeSuperseded: true }).length, 4, "every version kept");
+});
+
+suite.test("status() summarises active/disbanded teams and total memberships", function(a){
+  var T = fresh().T;
+  T.form({ name: "A" }); T.join("a", "kai"); T.join("a", "nav");
+  T.form({ name: "B" }); T.disband("b");
+  a.deepEqual(T.status(), { teams: 1, disbanded: 1, members: 2 });
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Teams";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = fresh();
+  var T = f.T, I = f.I;
+  T.form({ name: "Navigators", role: "steward" }); T.join("navigators", "kai"); T.join("navigators", "nav");
+  T.form({ name: "Deck Crew", role: "contributor" }); T.join("deck-crew", "hand");
+  T.form({ name: "Watch" }); T.join("watch", "hand"); // plain
+  var table = document.getElementById("teams");
+  T.list().forEach(function(t){
+    var row = table.insertRow();
+    row.insertCell().textContent = t.name;
+    row.insertCell().textContent = t.members.map(function(a){ return I.get(a).name; }).join(", ") || "—";
+    var c = row.insertCell();
+    c.textContent = t.role ? t.role.toUpperCase() : "— (plain group)";
+    c.className = t.role ? "confers" : "plain";
+  });
+})();
+</script>
+</body>
+</html>
