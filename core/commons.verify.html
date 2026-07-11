@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Community (The Commons)</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .role-observer{color:#8fb3c4} .role-contributor{color:#38bdf8} .role-steward{color:#fbbf24}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Community — The Commons</b> (build 0055, Stage 7 · Ecosystem). The path that turns a newcomer into a builder: an open door for offers and reviews, honest gates for acceptance, promotion on the record. Composes Identity (0035) + Governance (0043); adds no new storage type. Suite runs on the <b>Verification Engine</b> (0004). <b>Closes Stage 7 (Ecosystem).</b></div>
+<div id="suite"></div>
+
+<h2>Live proof — a newcomer's journey to builder</h2>
+<table id="journey"><tr><th>Moment</th><th>What happened</th><th>Nia's standing</th></tr></table>
+<div id="jline" class="note"></div>
+<div class="note">Belonging is not authority; contribution — reviewed and accepted — is. Every offer, review, acceptance and decline lives under the same governance law as any other change, append-only, forever.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="identity.js"></script>
+<script src="governance.js"></script>
+<script src="commons.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function rig(quorum){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "commons-test" });
+  os.start();
+  var I = OceanicCore.createIdentity({ oceanic: os });
+  I.register({ name: "Kai", role: "steward", id: "kai" });
+  var H = OceanicCore.createCommons({ oceanic: os, identity: I, quorum: quorum });
+  return { os: os, I: I, H: H };
+}
+function anOffer(H, by){
+  return H.offer({ title: "A tide-table template", kind: "template",
+                   summary: "a starter ocean for harbor keepers", by: by });
+}
+
+var suite = OceanicCore.createVerifier({ name: "Community — The Commons (build 0055)" });
+
+suite.test("factory composes Identity + Governance and exposes the flow", function(a){
+  a.equal(typeof OceanicCore.createCommons, "function");
+  var f = rig();
+  a.throws(function(){ OceanicCore.createCommons({}); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createCommons({ oceanic: f.os }); }, "no identity");
+  ["welcome","offer","review","accept","decline","credits","builders","path","get","list","status"].forEach(function(fn){
+    a.equal(typeof f.H[fn], "function", "exposes " + fn);
+  });
+  a.deepEqual(OceanicCore.createCommons.KINDS.sort(), ["capability","doc","fix","lesson","template"]);
+});
+
+suite.test("the door is open — anyone joins as an observer", function(a){
+  var f = rig();
+  var m = f.H.welcome("Nia Newcomer");
+  a.equal(m.id, "nia-newcomer");
+  a.equal(m.role, "observer");
+  a.ok(m.message.indexOf("welcome") >= 0);
+  a.throws(function(){ f.H.welcome("Nia Newcomer"); }, "one register entry per member (identity's law)");
+});
+
+suite.test("an OBSERVER may offer — in the commons, offering is how you begin", function(a){
+  var f = rig();
+  f.H.welcome("Nia Newcomer");
+  var c = anOffer(f.H, "nia-newcomer");
+  a.equal(c.id, "a-tide-table-template");
+  a.equal(c.kind, "template");
+  a.equal(c.status, "proposed");
+  a.equal(c.by, "nia-newcomer");
+});
+
+suite.test("offers are guarded — title, summary, a known kind, a real member", function(a){
+  var f = rig();
+  f.H.welcome("Nia Newcomer");
+  a.throws(function(){ f.H.offer({ kind: "template", summary: "s", by: "nia-newcomer" }); }, "no title");
+  a.throws(function(){ f.H.offer({ title: "T", kind: "template", by: "nia-newcomer" }); }, "no summary");
+  a.throws(function(){ f.H.offer({ title: "T", kind: "magic", summary: "s", by: "nia-newcomer" }); }, "unknown kind");
+  a.throws(function(){ f.H.offer({ title: "T", kind: "fix", summary: "s", by: "ghost" }); }, "unknown member");
+});
+
+suite.test("members review; never their own offer (governance's law, inherited)", function(a){
+  var f = rig();
+  f.H.welcome("Nia Newcomer");
+  f.H.welcome("Ravi Reviewer");
+  anOffer(f.H, "nia-newcomer");
+  a.throws(function(){ f.H.review("a-tide-table-template", "nia-newcomer", "endorse"); }, "not your own");
+  var c = f.H.review("a-tide-table-template", "ravi-reviewer", "endorse", "clean and useful");
+  a.equal(c.endorsements, 1, "an observer member's review counts — the commons is open");
+});
+
+suite.test("accept is a steward's act, gated by quorum and objections", function(a){
+  var f = rig();
+  f.H.welcome("Nia Newcomer");
+  f.H.welcome("Ravi Reviewer");
+  anOffer(f.H, "nia-newcomer");
+  a.throws(function(){ f.H.accept("a-tide-table-template", "ravi-reviewer"); }, "a member is not a steward");
+  a.throws(function(){ f.H.accept("a-tide-table-template", "kai"); }, "no endorsement yet — below quorum");
+  f.H.review("a-tide-table-template", "ravi-reviewer", "object", "docs are missing");
+  a.throws(function(){ f.H.accept("a-tide-table-template", "kai"); }, "a standing objection blocks");
+  f.H.review("a-tide-table-template", "ravi-reviewer", "endorse", "docs added — good now");
+  var out = f.H.accept("a-tide-table-template", "kai");
+  a.equal(out.contribution.status, "accepted");
+  a.equal(out.contribution.acceptedBy, "kai");
+});
+
+suite.test("THE PROMOTION — a first accepted drop makes an observer a contributor", function(a){
+  var f = rig();
+  f.H.welcome("Nia Newcomer");
+  f.H.welcome("Ravi Reviewer");
+  anOffer(f.H, "nia-newcomer");
+  f.H.review("a-tide-table-template", "ravi-reviewer", "endorse");
+  a.equal(f.I.get("nia-newcomer").role, "observer", "an observer before");
+  var out = f.H.accept("a-tide-table-template", "kai");
+  a.equal(out.promoted, true);
+  a.equal(out.offerer.role, "contributor", "a contributor after — on the record");
+  a.equal(f.I.get("nia-newcomer").role, "contributor", "identity itself says so");
+  a.ok(f.os.memory.status().superseded >= 1, "the promotion is an open amendment, history kept");
+});
+
+suite.test("an established contributor is not re-promoted — credits simply grow", function(a){
+  var f = rig();
+  f.H.welcome("Nia Newcomer");
+  f.H.welcome("Ravi Reviewer");
+  anOffer(f.H, "nia-newcomer");
+  f.H.review("a-tide-table-template", "ravi-reviewer", "endorse");
+  f.H.accept("a-tide-table-template", "kai");
+  f.H.offer({ title: "A dredging lesson", kind: "lesson", summary: "teaches the silt loop", by: "nia-newcomer" });
+  f.H.review("a-dredging-lesson", "ravi-reviewer", "endorse");
+  var out = f.H.accept("a-dredging-lesson", "kai");
+  a.equal(out.promoted, false, "already a contributor");
+  a.equal(out.offerer.role, "contributor");
+  a.equal(f.H.credits("nia-newcomer"), 2);
+});
+
+suite.test("decline is open — a reason required, no promotion, no credit", function(a){
+  var f = rig();
+  f.H.welcome("Nia Newcomer");
+  anOffer(f.H, "nia-newcomer");
+  a.throws(function(){ f.H.decline("a-tide-table-template", "kai"); }, "a refused drop deserves to know why");
+  var c = f.H.decline("a-tide-table-template", "kai", "duplicates the harbor template");
+  a.equal(c.status, "declined");
+  a.equal(c.reason, "duplicates the harbor template");
+  a.equal(f.I.get("nia-newcomer").role, "observer", "no promotion for a declined drop");
+  a.equal(f.H.credits("nia-newcomer"), 0);
+});
+
+suite.test("builders() and path() tell each member's true story", function(a){
+  var f = rig();
+  f.H.welcome("Nia Newcomer");
+  f.H.welcome("Ravi Reviewer");
+  a.deepEqual(f.H.builders(), [], "no builders yet");
+  var p0 = f.H.path("nia-newcomer");
+  a.equal(p0.isBuilder, false);
+  a.ok(p0.next.indexOf("first drop") >= 0);
+  anOffer(f.H, "nia-newcomer");
+  a.ok(f.H.path("nia-newcomer").next.indexOf("acceptance") >= 0);
+  f.H.review("a-tide-table-template", "ravi-reviewer", "endorse");
+  f.H.accept("a-tide-table-template", "kai");
+  var p = f.H.path("nia-newcomer");
+  a.equal(p.isBuilder, true);
+  a.equal(p.accepted, 1);
+  a.deepEqual(f.H.builders().map(function(b){ return b.id; }), ["nia-newcomer"]);
+  a.throws(function(){ f.H.path("ghost"); }, "unknown member");
+});
+
+suite.test("a stricter commons — quorum 2 needs two endorsements", function(a){
+  var f = rig(2);
+  f.H.welcome("Nia Newcomer");
+  f.H.welcome("Ravi Reviewer");
+  f.H.welcome("Simone Sailor");
+  anOffer(f.H, "nia-newcomer");
+  f.H.review("a-tide-table-template", "ravi-reviewer", "endorse");
+  a.throws(function(){ f.H.accept("a-tide-table-template", "kai"); }, "one endorsement is not two");
+  f.H.review("a-tide-table-template", "simone-sailor", "endorse");
+  a.equal(f.H.accept("a-tide-table-template", "kai").contribution.status, "accepted");
+});
+
+suite.test("status() sums the commons; no new storage type was invented", function(a){
+  var f = rig();
+  f.H.welcome("Nia Newcomer");
+  f.H.welcome("Ravi Reviewer");
+  anOffer(f.H, "nia-newcomer");
+  f.H.review("a-tide-table-template", "ravi-reviewer", "endorse");
+  f.H.accept("a-tide-table-template", "kai");
+  f.H.offer({ title: "Broken thing", kind: "fix", summary: "s", by: "ravi-reviewer" });
+  f.H.decline("broken-thing", "kai", "not reproducible");
+  var s = f.H.status();
+  a.equal(s.members, 3);
+  a.equal(s.contributions, 2);
+  a.equal(s.accepted, 1); a.equal(s.declined, 1);
+  a.equal(s.builders, 1);
+  var types = {};
+  f.os.memory.recall({}).forEach(function(r){ types[r.type] = 1; });
+  a.deepEqual(Object.keys(types).sort(), ["actor","proposal","proposal-review"],
+    "contributions live entirely in governance's existing types");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Community (The Commons)";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = rig();
+  var table = document.getElementById("journey");
+  function row(moment, what){
+    var p = f.I.get("nia-newcomer");
+    var tr = table.insertRow();
+    tr.insertCell().textContent = moment;
+    tr.insertCell().textContent = what;
+    var c = tr.insertCell();
+    c.textContent = p ? p.role : "(not yet a member)";
+    c.className = p ? "role-" + p.role : "";
+  }
+  row("arrives", "Nia finds the commons");
+  f.H.welcome("Nia Newcomer");
+  row("joins", "welcome() — the door is open to anyone");
+  f.H.welcome("Ravi Reviewer");
+  f.H.offer({ title: "A tide-table template", kind: "template", summary: "a starter ocean for harbor keepers", by: "nia-newcomer" });
+  row("offers", "her first drop: a template");
+  f.H.review("a-tide-table-template", "ravi-reviewer", "endorse", "clean and useful");
+  row("reviewed", "Ravi endorses it");
+  var out = f.H.accept("a-tide-table-template", "kai");
+  row("accepted", "Kai (steward) accepts — and Nia is promoted" + (out.promoted ? " ✓" : ""));
+  var p = f.H.path("nia-newcomer");
+  document.getElementById("jline").textContent =
+    "path: " + JSON.stringify(p) + " — the commons now counts " + f.H.status().builders + " builder(s).";
+})();
+</script>
+</body>
+</html>
