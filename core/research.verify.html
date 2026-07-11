@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Research</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .v-supported{color:#34d399} .v-refuted{color:#fb7185} .v-undetermined{color:#fbbf24} .v-concluded{color:#38bdf8;font-weight:bold}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Research</b> (build 0054, Stage 7 · Ecosystem). Systematic inquiry — question → hypotheses → real evidence → a LIVE verdict — where a finding graduates into the Knowledge Engine only when supported by verified reality. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — an inquiry into the north channel</h2>
+<table id="inq"><tr><th>Hypothesis</th><th>Evidence</th><th>Verdict</th></tr></table>
+<div id="inqline" class="note"></div>
+<div class="note">The verdict is a lens, not a stamp: reject a supporting observation and assess() changes its mind — and the Reasoner (0028) flags any already-graduated knowledge that rested on it. Verification before acceptance, applied to the making of knowledge itself.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="graph.js"></script>
+<script src="reason.js"></script>
+<script src="research.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function rig(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "research-test" });
+  os.start();
+  var R = OceanicCore.createResearch({ oceanic: os });
+  return { os: os, R: R };
+}
+function obs(os, body, verify){
+  var o = os.reality.observe({ observation: body, source: "survey" });
+  if (verify) os.reality.verify(o.meta.oid);
+  return o.meta.oid;
+}
+
+var suite = OceanicCore.createVerifier({ name: "Research (build 0054)" });
+
+suite.test("factory requires an assembled OceanicOS and exposes the inquiry loop", function(a){
+  a.equal(typeof OceanicCore.createResearch, "function");
+  a.throws(function(){ OceanicCore.createResearch({}); }, "no oceanic");
+  var f = rig();
+  ["open","hypothesize","evidence","assess","conclude","close","findings","get","list","status"].forEach(function(fn){
+    a.equal(typeof f.R[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("an inquiry opens with a question — and only with one", function(a){
+  var f = rig();
+  var q = f.R.open({ question: "Why does the north channel silt up?", by: "kai" });
+  a.equal(q.id, "why-does-the-north-channel-silt-up");
+  a.equal(q.status, "open");
+  a.deepEqual(q.hypotheses, []);
+  a.throws(function(){ f.R.open({}); }, "no question");
+  a.throws(function(){ f.R.open({ question: "Why does the north channel silt up?" }); }, "duplicate refused");
+});
+
+suite.test("hypotheses accumulate as h1, h2, … on an OPEN inquiry", function(a){
+  var f = rig();
+  f.R.open({ question: "Q?", id: "q" });
+  f.R.hypothesize("q", "the dredger schedule slipped");
+  var q = f.R.hypothesize("q", "the river brings more sediment since the storm");
+  a.deepEqual(q.hypotheses.map(function(h){ return h.hid; }), ["h1","h2"]);
+  a.equal(q.hypotheses[0].status, "proposed");
+  a.throws(function(){ f.R.hypothesize("q", ""); }, "a hypothesis needs a statement");
+  a.throws(function(){ f.R.hypothesize("ghost", "x"); }, "unknown inquiry");
+});
+
+suite.test("evidence must be REAL recorded reality, with a declared direction", function(a){
+  var f = rig();
+  f.R.open({ question: "Q?", id: "q" });
+  f.R.hypothesize("q", "h");
+  var oid = obs(f.os, "silt measured at 2m", false);
+  a.throws(function(){ f.R.evidence("q", "h1", oid, "maybe"); }, "stance must declare its direction");
+  a.throws(function(){ f.R.evidence("q", "h1", "o-ghost", "supports"); }, "evidence must exist in the ocean");
+  a.throws(function(){ f.R.evidence("q", "h9", oid, "supports"); }, "unknown hypothesis");
+  var q = f.R.evidence("q", "h1", oid, "supports");
+  a.equal(q.hypotheses[0].evidence.length, 1);
+});
+
+suite.test("assess: nothing verified → undetermined, and it says what is awaiting", function(a){
+  var f = rig();
+  f.R.open({ question: "Q?", id: "q" });
+  f.R.hypothesize("q", "h");
+  a.equal(f.R.assess("q", "h1").verdict, "undetermined", "no evidence at all");
+  f.R.evidence("q", "h1", obs(f.os, "pending measurement", false), "supports");
+  var v = f.R.assess("q", "h1");
+  a.equal(v.verdict, "undetermined", "pending evidence does not count yet");
+  a.equal(v.awaiting, 1, "…but it is visible as awaiting verification");
+});
+
+suite.test("assess: verified support → supported; verified contradiction REFUTES regardless", function(a){
+  var f = rig();
+  f.R.open({ question: "Q?", id: "q" });
+  f.R.hypothesize("q", "h");
+  f.R.evidence("q", "h1", obs(f.os, "support one", true), "supports");
+  a.equal(f.R.assess("q", "h1").verdict, "supported");
+  f.R.evidence("q", "h1", obs(f.os, "but this contradicts it", true), "contradicts");
+  var v = f.R.assess("q", "h1");
+  a.equal(v.verdict, "refuted", "one verified contradiction outweighs support");
+  a.equal(v.supporting, 1); a.equal(v.contradicting, 1);
+});
+
+suite.test("conclude REFUSES anything not supported — undetermined, refuted, or awaiting", function(a){
+  var f = rig();
+  f.R.open({ question: "Q?", id: "q" });
+  f.R.hypothesize("q", "no evidence");
+  a.throws(function(){ f.R.conclude("q", "h1"); }, "undetermined cannot graduate");
+  f.R.hypothesize("q", "contradicted");
+  f.R.evidence("q", "h2", obs(f.os, "against it", true), "contradicts");
+  a.throws(function(){ f.R.conclude("q", "h2"); }, "refuted cannot graduate");
+  a.equal(f.os.memory.recall({ type: "knowledge" }).length, 0, "no knowledge slipped out");
+});
+
+suite.test("a SUPPORTED hypothesis graduates into real, grounded Knowledge", function(a){
+  var f = rig();
+  f.R.open({ question: "Q?", id: "q" });
+  f.R.hypothesize("q", "the river brings more sediment since the storm");
+  var o1 = obs(f.os, "sediment doubled upstream", true);
+  var o2 = obs(f.os, "storm shifted the river mouth", true);
+  f.R.evidence("q", "h1", o1, "supports");
+  f.R.evidence("q", "h1", o2, "supports");
+  var out = f.R.conclude("q", "h1", ["channels"]);
+  a.equal(out.knowledge.indexOf("k") === 0 || !!out.knowledge, true, "a kid came back");
+  a.deepEqual(out.grounds.sort(), [o1, o2].sort(), "grounded on the verified support");
+  var k = f.os.knowledge.knowledge(false)[0];
+  a.equal(k.body, "the river brings more sediment since the storm");
+  a.ok(k.meta.topics.indexOf("research") >= 0 && k.meta.topics.indexOf("q") >= 0, "traceable back to the inquiry");
+  a.deepEqual(f.R.findings("q"), [{ hypothesis: "h1", statement: k.body, knowledge: out.knowledge }]);
+  a.throws(function(){ f.R.conclude("q", "h1"); }, "cannot conclude twice");
+  a.throws(function(){ f.R.evidence("q", "h1", o1, "supports"); }, "a concluded hypothesis takes no more evidence");
+});
+
+suite.test("the verdict is a LIVE lens — rejecting the support changes the answer", function(a){
+  var f = rig();
+  f.R.open({ question: "Q?", id: "q" });
+  f.R.hypothesize("q", "h");
+  var oid = obs(f.os, "the only support", true);
+  f.R.evidence("q", "h1", oid, "supports");
+  a.equal(f.R.assess("q", "h1").verdict, "supported");
+  f.os.reality.reject(oid); // reality re-examined
+  a.equal(f.R.assess("q", "h1").verdict, "undetermined", "the lens changed its mind with reality");
+});
+
+suite.test("closing an inquiry requires a summary and is terminal", function(a){
+  var f = rig();
+  f.R.open({ question: "Q?", id: "q" });
+  f.R.hypothesize("q", "h");
+  a.throws(function(){ f.R.close("q"); }, "an inquiry ends by saying what was learned");
+  var q = f.R.close("q", "inconclusive — the winter survey will decide");
+  a.equal(q.status, "closed");
+  a.equal(q.summary, "inconclusive — the winter survey will decide");
+  a.throws(function(){ f.R.hypothesize("q", "late idea"); }, "a closed inquiry takes no more hypotheses");
+  a.throws(function(){ f.R.close("q", "again"); }, "cannot close twice");
+});
+
+suite.test("everything is append-only — the inquiry's whole path is preserved", function(a){
+  var f = rig();
+  f.R.open({ question: "Q?", id: "q" });
+  f.R.hypothesize("q", "h");
+  f.R.evidence("q", "h1", obs(f.os, "e", true), "supports");
+  f.R.close("q", "done");
+  var s = f.os.memory.status();
+  a.ok(s.superseded >= 3, "each step superseded the last, openly");
+  a.equal(f.os.memory.recall({ type: "inquiry" }).length, 1, "one current inquiry record");
+});
+
+suite.test("list and status sum the research programme", function(a){
+  var f = rig();
+  f.R.open({ question: "First?", id: "one" });
+  f.R.open({ question: "Second?", id: "two" });
+  f.R.hypothesize("one", "a"); f.R.hypothesize("one", "b");
+  var oid = obs(f.os, "solid", true);
+  f.R.evidence("one", "h1", oid, "supports");
+  f.R.conclude("one", "h1");
+  f.R.close("two", "merged into the first inquiry");
+  a.deepEqual(f.R.status(), { inquiries: 2, open: 1, hypotheses: 2, concluded: 1 });
+  a.equal(f.R.list({ status: "open" }).length, 1);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Research";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = rig();
+  f.R.open({ question: "Why does the north channel silt up?", id: "north-channel" });
+  f.R.hypothesize("north-channel", "the dredger schedule slipped");
+  f.R.hypothesize("north-channel", "the river brings more sediment since the storm");
+  f.R.hypothesize("north-channel", "shipping wakes stir the banks");
+  var log1 = obs(f.os, "dredger logs show no missed runs", true);
+  f.R.evidence("north-channel", "h1", log1, "contradicts");
+  var sed = obs(f.os, "sediment doubled upstream", true);
+  var mouth = obs(f.os, "storm shifted the river mouth", true);
+  f.R.evidence("north-channel", "h2", sed, "supports");
+  f.R.evidence("north-channel", "h2", mouth, "supports");
+  f.R.evidence("north-channel", "h3", obs(f.os, "wake study still pending", false), "supports");
+  var out = f.R.conclude("north-channel", "h2", ["channels"]);
+  var table = document.getElementById("inq");
+  f.R.get("north-channel").hypotheses.forEach(function(h){
+    var row = table.insertRow();
+    row.insertCell().textContent = h.hid + " — " + h.statement;
+    row.insertCell().textContent = h.evidence.length + " piece(s)";
+    var v = row.insertCell();
+    if (h.status === "concluded") { v.textContent = "CONCLUDED → " + h.kid; v.className = "v-concluded"; }
+    else { v.textContent = h.verdict.verdict + (h.verdict.awaiting ? " (" + h.verdict.awaiting + " awaiting)" : ""); v.className = "v-" + h.verdict.verdict; }
+  });
+  document.getElementById("inqline").textContent =
+    "h2 graduated into the Knowledge Engine as " + out.knowledge + ", grounded on " + out.grounds.length +
+    " verified observations — h1 stands refuted, h3 waits for its evidence to be verified.";
+})();
+</script>
+</body>
+</html>

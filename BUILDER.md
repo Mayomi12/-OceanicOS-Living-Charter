@@ -58,7 +58,7 @@ Observe. Verify. Build **one** capability. Test. Record. Release. Continue.
 | 4 — Intelligence | ✅ COMPLETE (8/8) | Search ✅ (0026) · Knowledge Graph ✅ (0027) · Reasoning ✅ (0028) · Planning ✅ (0029) · Learning ✅ (0030) · Recommendation ✅ (0031) · Simulation ✅ (0032) · Evaluation ✅ (`core/evaluate.js`, 0033) |
 | 5 — Collaboration | ✅ COMPLETE (8/8) | Users — Identity ✅ (0035) · Permissions ✅ (0036) · Workspaces ✅ (0037) · Teams ✅ (0038) · Organizations ✅ (0039) · Communities ✅ (0040) · Shared Knowledge ✅ (0041) · Governance ✅ (`core/governance.js`, 0043) |
 | 6 — Infrastructure | ✅ COMPLETE | Local ✅ + Offline ✅ (zero-runtime + Store, 0024) · Synchronization ✅ (0046) · Monitoring ✅ (0047) · CI/CD ✅ (0048) · Deployment ✅ (0049) · Cloud/Containers ✅ (`core/containers.js`, 0050) |
-| 7 — Ecosystem | 🔨 IN PROGRESS | Plugins ✅ (Extensions, 0022) · Open Source ✅ (this repo) · Templates ✅ (0051) · Education ✅ (0052) · Public APIs + Developer Platform ✅ (`core/platform.js`, 0053) · Research · Community remain |
+| 7 — Ecosystem | 🔨 IN PROGRESS | Plugins ✅ (Extensions, 0022) · Open Source ✅ (this repo) · Templates ✅ (0051) · Education ✅ (0052) · Public APIs + Developer Platform ✅ (0053) · Research ✅ (`core/research.js`, 0054) · Community remains |
 | 8 — Stewardship | 🌊 open water | — |
 
 See [BUILD_LOG.md](BUILD_LOG.md) for every verified capability.
