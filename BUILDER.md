@@ -59,6 +59,6 @@ Observe. Verify. Build **one** capability. Test. Record. Release. Continue.
 | 5 — Collaboration | ✅ COMPLETE (8/8) | Users — Identity ✅ (0035) · Permissions ✅ (0036) · Workspaces ✅ (0037) · Teams ✅ (0038) · Organizations ✅ (0039) · Communities ✅ (0040) · Shared Knowledge ✅ (0041) · Governance ✅ (`core/governance.js`, 0043) |
 | 6 — Infrastructure | ✅ COMPLETE | Local ✅ + Offline ✅ (zero-runtime + Store, 0024) · Synchronization ✅ (0046) · Monitoring ✅ (0047) · CI/CD ✅ (0048) · Deployment ✅ (0049) · Cloud/Containers ✅ (`core/containers.js`, 0050) |
 | 7 — Ecosystem | ✅ COMPLETE (8/8) | Plugins ✅ (Extensions, 0022) · Open Source ✅ (this repo) · Templates ✅ (0051) · Education ✅ (0052) · Public APIs + Developer Platform ✅ (0053) · Research ✅ (0054) · Community — The Commons ✅ (`core/commons.js`, 0055) |
-| 8 — Stewardship | 🔨 IN PROGRESS | Security ✅ (0056) · Privacy ✅ (0057) · Migration ✅ (`core/migration.js`, 0058) · Accessibility · Maintenance · Preservation · Continuous Improvement remain |
+| 8 — Stewardship | 🔨 IN PROGRESS | Security ✅ (0056) · Privacy ✅ (0057) · Migration ✅ (0058) · Preservation ✅ (`core/preservation.js`, 0059) · Accessibility · Maintenance · Continuous Improvement remain |
 
 See [BUILD_LOG.md](BUILD_LOG.md) for every verified capability.
