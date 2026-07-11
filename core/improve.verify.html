@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Continuous Improvement</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .final{margin-top:18px;padding:14px;border:1px solid #12455f;color:#34d399;font-weight:bold;text-align:center}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Continuous Improvement</b> (build 0062, Stage 8 · Stewardship). The build doctrine itself as a capability — the system observes itself, suggests ONE improvement by evidence, and files it with Governance. It proposes; humans decide. <b>Closes Stage 8 — and keeps everything after it open forever.</b> Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — one full cycle of the loop</h2>
+<table id="cycle"><tr><th>Doctrine step</th><th>What happened</th></tr></table>
+<div id="cycleline" class="note"></div>
+<div id="final" class="final"></div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="graph.js"></script>
+<script src="reason.js"></script>
+<script src="learn.js"></script>
+<script src="evaluate.js"></script>
+<script src="plan.js"></script>
+<script src="monitor.js"></script>
+<script src="identity.js"></script>
+<script src="governance.js"></script>
+<script src="preservation.js"></script>
+<script src="maintenance.js"></script>
+<script src="improve.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function rig(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "improve-test" });
+  os.start();
+  var I = OceanicCore.createIdentity({ oceanic: os });
+  I.register({ name: "Kai", role: "steward", id: "kai" });
+  I.register({ name: "Mara", id: "mara" });
+  var G = OceanicCore.createGovernance({ oceanic: os, identity: I });
+  var log = OceanicCore.createLogger({ now: clock });
+  var M = OceanicCore.createMonitor({ oceanic: os, logger: log });
+  var CI = OceanicCore.createImprovement({ oceanic: os, governance: G, monitor: M });
+  return { os: os, I: I, G: G, M: M, CI: CI, log: log };
+}
+function keep(f){ // bring the rig to kept, healthy, grade-A
+  var o = f.os.reality.observe({ observation: "steady seas, all verified", source: "watch" });
+  f.os.reality.verify(o.meta.oid);
+  return o;
+}
+
+var suite = OceanicCore.createVerifier({ name: "Continuous Improvement (build 0062)" });
+
+suite.test("factory requires the ocean AND Governance — the system proposes, humans decide", function(a){
+  a.equal(typeof OceanicCore.createImprovement, "function");
+  var f = rig();
+  a.throws(function(){ OceanicCore.createImprovement({}); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createImprovement({ oceanic: f.os }); }, "no governance — non-negotiable");
+  ["observe","suggest","propose","cycle","history","status","signals"].forEach(function(fn){
+    a.equal(typeof f.CI[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("observe(): the system looks at itself ON THE RECORD — pending like all reality", function(a){
+  var f = rig(); keep(f);
+  var seen = f.CI.observe();
+  a.equal(seen.status, "pending", "a self-observation earns no free verification");
+  a.ok(seen.body.indexOf("self-observation") === 0);
+  a.ok(seen.body.indexOf("grade") >= 0);
+  var rec = f.os.reality.get(seen.id);
+  a.equal(rec.source, OceanicCore.createImprovement.TAG, "provenance names the loop");
+  var v = f.os.reality.verify(seen.id);
+  a.equal(v.meta.status, "verified", "and a steward can verify it like anything else");
+});
+
+suite.test("suggest() with urgent chores → REPAIR first; nothing grows on a broken foundation", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "a rumor", source: "dock" });
+  f.os.decisions.propose({ question: "act?", options: ["y","n"], grounds: [o.meta.oid] });
+  f.os.reality.reject(o.meta.oid); // unsound → a P1 chore
+  var s = f.CI.suggest();
+  a.equal(s.focus, "repair");
+  a.ok(s.evidence.chores.p1 >= 1);
+  a.ok(s.plan.indexOf("P1") >= 0);
+});
+
+suite.test("suggest() with a blocked gate → HEALTH before growth", function(a){
+  var f = rig(); keep(f);
+  f.log.error("the pumps failed"); // monitor's LOG check now fails → gate blocked
+  var s = f.CI.suggest();
+  a.equal(s.focus, "health");
+  a.ok(s.rationale.indexOf("LOG") >= 0, "the blocker is named: " + s.rationale);
+});
+
+suite.test("suggest() below the grade bar → SOUNDNESS", function(a){
+  var f = rig();
+  keep(f);
+  var o2 = f.os.reality.observe({ observation: "also steady", source: "watch" });
+  f.os.reality.verify(o2.meta.oid);
+  var bad = f.os.reality.observe({ observation: "a wrong rumor", source: "rumor" });
+  f.os.reality.reject(bad.meta.oid);
+  // grade dips below the improvement bar (90) but stays above the monitor's health bar (70):
+  // health is not the problem — soundness is the next improvement
+  var s = f.CI.suggest();
+  a.ok(s.evidence.gate.release, "the gate is still open — this is not a health case");
+  a.equal(s.focus, "soundness");
+  a.ok(s.rationale.indexOf("below the bar") >= 0);
+});
+
+suite.test("suggest() on a KEPT system → the Final Law: build the next capability. It never ends", function(a){
+  var f = rig(); keep(f);
+  var s = f.CI.suggest();
+  a.equal(s.focus, "next-capability");
+  a.ok(s.rationale.indexOf("Final Law") >= 0);
+  a.ok(s.plan.indexOf("repeat") >= 0, "…and repeat");
+});
+
+suite.test("propose() files a real governance proposal — tagged, planned, by a real actor", function(a){
+  var f = rig(); keep(f);
+  a.throws(function(){ f.CI.propose("ghost"); }, "an unknown actor cannot propose");
+  var out = f.CI.propose("mara");
+  a.equal(out.proposal.status, "proposed");
+  a.equal(out.proposal.impact, OceanicCore.createImprovement.TAG, "tagged as the loop's own");
+  a.ok(out.proposal.title.indexOf("improve #1:") === 0);
+  a.ok(out.proposal.rationale.length > 20 && out.proposal.plan.length > 20, "rationale and plan carried");
+});
+
+suite.test("THE HUMAN GATE — the system never enacts its own ideas", function(a){
+  var f = rig(); keep(f);
+  var before = f.os.memory.status().count;
+  var out = f.CI.propose("mara");
+  a.equal(f.os.memory.status().count, before + 1, "exactly ONE new record: the proposal itself — nothing enacted");
+  a.throws(function(){ f.G.ratify(out.proposal.id, "mara"); }, "a contributor cannot ratify");
+  f.G.review(out.proposal.id, "kai", "endorse");
+  var ratified = f.G.ratify(out.proposal.id, "kai");
+  a.equal(ratified.status, "ratified", "ratification remains a steward's act — the loop ends at the human gate");
+});
+
+suite.test("cycle(): the whole doctrine, once — observe → suggest → propose", function(a){
+  var f = rig(); keep(f);
+  var c = f.CI.cycle("mara");
+  a.equal(f.os.reality.get(c.observation.id).meta.status, "pending", "the self-observation is real");
+  a.equal(c.suggestion.focus, "next-capability");
+  a.equal(c.proposal.status, "proposed");
+  a.ok(c.note.indexOf("human") >= 0 || c.note.indexOf("steward") >= 0, c.note);
+});
+
+suite.test("the loop REPEATS — each cycle files a new, distinct proposal", function(a){
+  var f = rig(); keep(f);
+  var c1 = f.CI.cycle("mara");
+  var c2 = f.CI.cycle("mara");
+  a.ok(c1.proposal.id !== c2.proposal.id, "distinct proposals");
+  a.equal(f.CI.history().length, 2);
+  a.ok(c2.proposal.title.indexOf("improve #2:") === 0, "numbered in order");
+});
+
+suite.test("history() sees only the loop's own proposals; status() sums the practice", function(a){
+  var f = rig(); keep(f);
+  f.G.propose({ title: "Unrelated motion", rationale: "something else", by: "mara" });
+  f.CI.cycle("mara");
+  a.equal(f.CI.history().length, 1, "the unrelated motion is not the loop's");
+  var st = f.CI.status();
+  a.equal(st.proposals, 1);
+  a.equal(st.selfObservations, 1);
+  a.deepEqual(st.byStatus, { proposed: 1 });
+});
+
+suite.test("suggestion is evidence-determined — same state, same focus", function(a){
+  var f = rig(); keep(f);
+  a.equal(f.CI.suggest().focus, f.CI.suggest().focus);
+  a.deepEqual(f.CI.suggest().evidence.chores, f.CI.suggest().evidence.chores, "and the evidence agrees with itself");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Continuous Improvement";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: one full cycle ---- */
+(function(){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "steady seas", source: "watch" });
+  f.os.reality.verify(o.meta.oid);
+  var table = document.getElementById("cycle");
+  function row(step, what){ var tr = table.insertRow(); tr.insertCell().textContent = step; tr.insertCell().textContent = what; }
+  var c = f.CI.cycle("mara");
+  row("Observe", c.observation.body);
+  row("Suggest", c.suggestion.focus + " — " + c.suggestion.rationale);
+  row("Propose", c.proposal.title + " (status: " + c.proposal.status + ")");
+  f.G.review(c.proposal.id, "kai", "endorse");
+  var r = f.G.ratify(c.proposal.id, "kai");
+  row("The human gate", "Kai (steward) ratified — the loop ends where it must");
+  document.getElementById("cycleline").textContent = c.note;
+  document.getElementById("final").textContent =
+    "Never build everything. Always build the next verified capability that leaves reality better than before. Continue. ∞";
+})();
+</script>
+</body>
+</html>
