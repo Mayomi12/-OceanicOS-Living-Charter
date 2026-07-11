@@ -112,7 +112,7 @@ suite.test("redact withdraws content from EVERY current read — search included
   a.equal(r.redacted, true);
   a.ok(r.body.indexOf("[redacted") === 0, "the body is a tombstone");
   a.equal(S.search("treated").length, 0, "search no longer finds the CONTENT");
-  a.equal(S.search("pier 9").length, 0, "none of it");
+  a.equal(S.search("pier").length, 0, "none of it");
   a.ok(S.search("clinic").length >= 1, "…but PROVENANCE (source) is preserved by law — who told us is never erased");
   var rec = f.os.reality.get(o.meta.oid);
   a.equal(rec.meta.status, "verified", "the engine's status machine is undisturbed");
