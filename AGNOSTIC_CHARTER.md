@@ -1,4 +1,4 @@
-# 🌊 Ω∞ OceanicOS Living Agnostic Charter v1.0
+# 🌊 Ω∞v OceanicOS Living Agnostic Charter
 
 > **Companion vision document, not the ratified operational Charter.**
 > This is the platform-agnostic constitutional vision for the wider OceanicOS
@@ -16,9 +16,10 @@
 
 **One Mission. Many Builders. Better Reality.**
 
-Status: Living Foundation
-Version: 1.0
-Mode: Open • Platform-Agnostic • Human-Centered • Evidence-Based
+Version: Ω∞v
+State: Living • Open • Platform-Agnostic • Continuous Becoming
+
+*(r2 identity — Status: Living Foundation · Version: 1.0 · Mode: Open • Platform-Agnostic • Human-Centered • Evidence-Based — superseded by r3, preserved here as this document's own Governance requires.)*
 
 ---
 
@@ -245,7 +246,8 @@ See **[VISION.md](VISION.md)** for the full architecture map.
 
 ## Revision history
 
-- **r2 — 2026-07-10 (current):** "One Mission. Many Builders. Better Reality." — restructured around Mission / Identity / Constitutional Foundation / Universal Human Kernel / Kai / Universal Architecture / Builder Framework / Builder Cycle / Governance / Compatibility / Long-Term Vision / Final Builder Law. Received from the Operator.
+- **r3 — 2026-07-11 (current):** version identity **Ω∞v**, state **Living • Open • Platform-Agnostic • Continuous Becoming** — received from the Operator; article text unchanged from r2 (a version number marks a milestone, not completion — Article XIII r1 / Continuous Becoming).
+- **r2 — 2026-07-10 (body text current):** "One Mission. Many Builders. Better Reality." — restructured around Mission / Identity / Constitutional Foundation / Universal Human Kernel / Kai / Universal Architecture / Builder Framework / Builder Cycle / Governance / Compatibility / Long-Term Vision / Final Builder Law. Received from the Operator.
 - **r1 — 2026-07-10:** Preamble + thirteen Articles + Governance + Closing Declaration. Received from the Operator; archived verbatim below.
 
 ---
