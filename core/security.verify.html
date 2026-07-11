@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Security</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .high{color:#fb7185;font-weight:bold} .medium{color:#fbbf24} .low{color:#8fb3c4}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Security</b> (build 0056, Stage 8 · Stewardship). The audit made a capability — a pure sweep of the assembled system for the open doors that actually exist in this architecture. Composes Permissions (0036) · Platform (0053) · Monitor (0047) · Identity (0035). Suite runs on the <b>Verification Engine</b> (0004). <b>Opens Stage 8.</b></div>
+<div id="suite"></div>
+
+<h2>Live proof — two systems audited side by side</h2>
+<table id="aud"><tr><th>Check</th><th>Hardened rig</th><th>Careless rig</th></tr></table>
+<div id="audline" class="note"></div>
+<div class="note">The audit is pure — it reads, judges and reports; hardening is a human's act. Every finding carries its severity AND its fix. Trust is earned and continuously maintained.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="identity.js"></script>
+<script src="permissions.js"></script>
+<script src="api.js"></script>
+<script src="platform.js"></script>
+<script src="graph.js"></script>
+<script src="reason.js"></script>
+<script src="learn.js"></script>
+<script src="evaluate.js"></script>
+<script src="monitor.js"></script>
+<script src="security.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+/* a fully hardened rig: gated, watched, scoped, stewarded, secret-free */
+function hardened(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "sec-good" });
+  os.start();
+  var I = OceanicCore.createIdentity({ oceanic: os });
+  I.register({ name: "Kai", role: "steward", id: "kai" });
+  I.register({ name: "Dana", id: "dana" });
+  var perms = OceanicCore.createPermissions({ identity: I, anonymous: null });
+  var log = OceanicCore.createLogger({ now: clock });
+  var api = OceanicCore.createAPI({ oceanic: os });
+  var P = OceanicCore.createPlatform({ oceanic: os, api: api, identity: I, logger: log });
+  P.registerApp({ name: "Tide Watcher", owner: "dana", scopes: ["reality.observe","reality.list"] });
+  var M = OceanicCore.createMonitor({ oceanic: os, logger: log });
+  var S = OceanicCore.createSecurity({ oceanic: os, permissions: perms, identity: I, platform: P, monitor: M, logger: log });
+  return { os: os, I: I, perms: perms, P: P, M: M, S: S, log: log };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Security (build 0056)" });
+
+suite.test("factory requires the ocean and exposes the audit", function(a){
+  a.equal(typeof OceanicCore.createSecurity, "function");
+  a.throws(function(){ OceanicCore.createSecurity({}); }, "no oceanic");
+  var f = hardened();
+  ["audit","checks","posture","status"].forEach(function(fn){ a.equal(typeof f.S[fn], "function", "exposes " + fn); });
+});
+
+suite.test("a well-kept system audits HARDENED — six doors proven locked", function(a){
+  var f = hardened();
+  var rep = f.S.audit();
+  a.deepEqual(rep.findings, [], "no findings: " + JSON.stringify(rep.findings.map(function(x){ return x.id; })));
+  a.equal(rep.passed.length, 6);
+  a.equal(rep.posture, "hardened");
+  a.equal(rep.score, 100);
+  a.ok(rep.headline.indexOf("HARDENED") === 0);
+});
+
+suite.test("SEC-ANON — anonymous WRITE authority is a high finding, probed behaviourally", function(a){
+  var f = hardened();
+  var lax = OceanicCore.createPermissions({ identity: f.I, anonymous: "contributor" });
+  var S = OceanicCore.createSecurity({ oceanic: f.os, permissions: lax, identity: f.I, platform: f.P, monitor: f.M });
+  var rep = S.audit();
+  var anon = rep.findings.filter(function(x){ return x.id === "SEC-ANON"; })[0];
+  a.ok(anon, "the open door was found");
+  a.equal(anon.severity, "high");
+  a.ok(anon.fix.indexOf("anonymous: null") >= 0, "the fix is stated");
+  a.equal(rep.posture, "exposed");
+});
+
+suite.test("SEC-WRITES — no Permissions layer at all is itself a finding", function(a){
+  var f = hardened();
+  var S = OceanicCore.createSecurity({ oceanic: f.os, identity: f.I, platform: f.P, monitor: f.M });
+  var w = S.audit().findings.filter(function(x){ return x.id === "SEC-WRITES"; })[0];
+  a.ok(w, "ungated engines reported");
+  a.equal(w.severity, "medium");
+  a.ok(w.fix.indexOf("wrap") >= 0);
+});
+
+suite.test("SEC-APPS — a '*' app is an over-broad grant (medium), and it is NAMED", function(a){
+  var f = hardened();
+  f.P.registerApp({ name: "Greedy", owner: "dana", scopes: ["*"] });
+  var appF = f.S.audit().findings.filter(function(x){ return x.id === "SEC-APPS"; })[0];
+  a.ok(appF, "found");
+  a.equal(appF.severity, "medium");
+  a.ok(appF.detail.indexOf("greedy") >= 0, "named: " + appF.detail);
+  a.equal(f.S.posture(), "guarded");
+});
+
+suite.test("SEC-APPS — an ORPHANED app (owner retired) is a high finding", function(a){
+  var f = hardened();
+  f.I.retire("dana"); // tide-watcher's responsible owner is gone
+  var appF = f.S.audit().findings.filter(function(x){ return x.id === "SEC-APPS"; })[0];
+  a.ok(appF, "found");
+  a.equal(appF.severity, "high");
+  a.ok(appF.detail.indexOf("tide-watcher") >= 0);
+  a.ok(appF.fix.indexOf("revoke") >= 0);
+  a.equal(f.S.posture(), "exposed");
+});
+
+suite.test("SEC-SECRETS — a key recorded into the ocean is found, and the fix is honest", function(a){
+  var f = hardened();
+  a.equal(f.S.audit().findings.filter(function(x){ return x.id === "SEC-SECRETS"; }).length, 0, "clean before");
+  // someone carelessly records an app key as an observation
+  f.os.reality.observe({ observation: "note to self, the app key is ok_tide-watcher_1_9f3a2b7c", source: "careless" });
+  var sec = f.S.audit().findings.filter(function(x){ return x.id === "SEC-SECRETS"; })[0];
+  a.ok(sec, "the leak was found in the snapshot");
+  a.equal(sec.severity, "high");
+  a.ok(sec.detail.indexOf("FOREVER") >= 0, "append-only means leaked forever");
+  a.ok(sec.fix.indexOf("revoke") >= 0, "the key must die — the record cannot");
+});
+
+suite.test("SEC-GATE — unwatched is a low finding; unhealthy is medium", function(a){
+  var f = hardened();
+  var unwatched = OceanicCore.createSecurity({ oceanic: f.os, permissions: f.perms, identity: f.I, platform: f.P });
+  var g1 = unwatched.audit().findings.filter(function(x){ return x.id === "SEC-GATE"; })[0];
+  a.ok(g1); a.equal(g1.severity, "low");
+  f.log.error("something broke"); // the monitor's LOG check now fails
+  var g2 = f.S.audit().findings.filter(function(x){ return x.id === "SEC-GATE"; })[0];
+  a.ok(g2, "an unhealthy system is a security posture problem");
+  a.equal(g2.severity, "medium");
+});
+
+suite.test("SEC-STEWARD — a system where nobody can pass verdicts silts up", function(a){
+  var f = hardened();
+  f.I.retire("kai"); // the only steward leaves
+  var st = f.S.audit().findings.filter(function(x){ return x.id === "SEC-STEWARD"; })[0];
+  a.ok(st, "found");
+  a.equal(st.severity, "medium");
+  a.ok(st.fix.indexOf("never over humans") >= 0, "the Charter travels with the fix");
+});
+
+suite.test("the posture ladder holds: high → exposed, medium → guarded, clean → hardened", function(a){
+  var f = hardened();
+  a.equal(f.S.posture(), "hardened");
+  f.P.registerApp({ name: "Greedy", owner: "dana", scopes: ["*"] });
+  a.equal(f.S.posture(), "guarded", "a medium finding");
+  f.I.retire("dana");
+  a.equal(f.S.posture(), "exposed", "a high finding");
+  var rep = f.S.audit();
+  a.ok(rep.score < 100);
+  a.ok(rep.headline.indexOf("EXPOSED") === 0);
+});
+
+suite.test("findings land in the operational log; the audit writes NOTHING to the ocean", function(a){
+  var f = hardened();
+  f.P.registerApp({ name: "Greedy", owner: "dana", scopes: ["*"] });
+  var warnsBefore = f.log.status().counts.warn;
+  var recordsBefore = f.os.memory.status().count;
+  f.S.audit(); f.S.posture(); f.S.status();
+  a.ok(f.log.status().counts.warn > warnsBefore, "each finding warned");
+  a.equal(f.os.memory.status().count, recordsBefore, "pure — the ocean is untouched by watching");
+});
+
+suite.test("status() is the one-line posture", function(a){
+  var f = hardened();
+  a.deepEqual(f.S.status(), { posture: "hardened", score: 100, findings: 0, passed: 6 });
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Security";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var good = hardened();
+  // a careless rig: anonymous writes, a * app with a retired owner, unwatched, a leaked key
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "sec-bad" });
+  os.start();
+  var I = OceanicCore.createIdentity({ oceanic: os });
+  I.register({ name: "Bo", id: "bo" });
+  var lax = OceanicCore.createPermissions({ identity: I, anonymous: "contributor" });
+  var api = OceanicCore.createAPI({ oceanic: os });
+  var P = OceanicCore.createPlatform({ oceanic: os, api: api, identity: I });
+  var app = P.registerApp({ name: "Do Everything", owner: "bo", scopes: ["*"] });
+  os.reality.observe({ observation: "psst the key is " + app.key, source: "bo" });
+  I.retire("bo");
+  var bad = OceanicCore.createSecurity({ oceanic: os, permissions: lax, identity: I, platform: P });
+
+  var goodBy = {}; good.S.checks().forEach(function(c){ goodBy[c.id] = c; });
+  var badBy = {};  bad.checks().forEach(function(c){ badBy[c.id] = c; });
+  var ids = {}; Object.keys(goodBy).forEach(function(k){ ids[k]=1; }); Object.keys(badBy).forEach(function(k){ ids[k]=1; });
+  var table = document.getElementById("aud");
+  Object.keys(ids).sort().forEach(function(id){
+    var row = table.insertRow();
+    row.insertCell().textContent = id + " — " + ((goodBy[id]||badBy[id]).name);
+    function cell(c){
+      var td = row.insertCell();
+      if (!c) { td.textContent = "—"; return; }
+      if (c.verdict === "pass") { td.textContent = "✓ locked"; td.className = "pass"; }
+      else { td.textContent = "✗ " + c.severity.toUpperCase() + " — " + c.detail.slice(0, 60) + "…"; td.className = c.severity; }
+    }
+    cell(goodBy[id]); cell(badBy[id]);
+  });
+  document.getElementById("audline").textContent =
+    "hardened rig: " + good.S.audit().headline + "  ·  careless rig: " + bad.audit().headline;
+})();
+</script>
+</body>
+</html>
