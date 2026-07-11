@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Developer Platform</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold} .warn{color:#fbbf24}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Developer Platform</b> (build 0053, Stage 7 · Ecosystem). The front door for third-party builders — registered apps with a responsible owner and scoped keys, acting through a gated, <b>audited</b> surface. Composes API (0017) · Identity (0035) · Logger (0014). Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — two apps at the front door</h2>
+<table id="apps"><tr><th>App</th><th>Owner</th><th>Scopes</th><th>Status</th><th>Calls (denied)</th></tr></table>
+<div id="appline" class="note"></div>
+<div class="note">Scopes gate WHICH operations an app may attempt; the engines' laws still hold underneath. Keys live only in runtime memory — the ocean records the app, its owner, its scopes and its fate, never its key. Least privilege, evidence, no silent doors.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="identity.js"></script>
+<script src="api.js"></script>
+<script src="platform.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function rig(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "platform-test" });
+  os.start();
+  var I = OceanicCore.createIdentity({ oceanic: os });
+  I.register({ name: "Dana Developer", id: "dana" });
+  var log = OceanicCore.createLogger({ now: clock });
+  var api = OceanicCore.createAPI({ oceanic: os });
+  var P = OceanicCore.createPlatform({ oceanic: os, api: api, identity: I, logger: log });
+  return { os: os, I: I, api: api, P: P, log: log };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Developer Platform (build 0053)" });
+
+suite.test("factory demands its collaborators and exposes the surface", function(a){
+  a.equal(typeof OceanicCore.createPlatform, "function");
+  var f = rig();
+  a.throws(function(){ OceanicCore.createPlatform({}); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createPlatform({ oceanic: f.os }); }, "no api");
+  a.throws(function(){ OceanicCore.createPlatform({ oceanic: f.os, api: f.api }); }, "no identity");
+  ["registerApp","revoke","client","apps","get","usage","status"].forEach(function(fn){ a.equal(typeof f.P[fn], "function", "exposes " + fn); });
+});
+
+suite.test("registering an app: a responsible owner, declared scopes, a key shown once", function(a){
+  var f = rig();
+  a.throws(function(){ f.P.registerApp({ name: "Ghost App", owner: "nobody", scopes: ["*"] }); }, "owner must be a real actor");
+  a.throws(function(){ f.P.registerApp({ name: "Greedy", owner: "dana" }); }, "scopes are required — least privilege");
+  var app = f.P.registerApp({ name: "Tide Watcher", owner: "dana", scopes: ["reality.observe", "reality.list"] });
+  a.equal(app.appId, "tide-watcher");
+  a.ok(app.key && app.key.length > 10, "a key came back");
+  a.equal(app.status, "active");
+  a.throws(function(){ f.P.registerApp({ name: "Tide Watcher", owner: "dana", scopes: ["*"] }); }, "duplicate id refused");
+});
+
+suite.test("THE KEY IS NEVER IN THE OCEAN — the record carries everything but the secret", function(a){
+  var f = rig();
+  var app = f.P.registerApp({ name: "Tide Watcher", owner: "dana", scopes: ["reality.*"] });
+  var snapshot = f.os.exportSnapshot();
+  a.equal(snapshot.indexOf(app.key), -1, "the key does not appear anywhere in the persisted ocean");
+  var rec = f.os.memory.recall({ type: "app" })[0];
+  a.equal(rec.meta.appId, "tide-watcher");
+  a.equal(rec.meta.owner, "dana");
+  a.deepEqual(rec.meta.scopes, ["reality.*"], "…but owner and scopes are on the record");
+});
+
+suite.test("an in-scope call works, through the API's stable shapes", function(a){
+  var f = rig();
+  var app = f.P.registerApp({ name: "Tide Watcher", owner: "dana", scopes: ["reality.observe", "reality.list"] });
+  var c = f.P.client(app.key);
+  var r = c.call("reality.observe", { observation: "spring tide at noon", source: "tide-watcher" });
+  a.equal(r.ok, true);
+  a.equal(r.data.status, "pending", "the stable observation shape came back");
+  a.equal(c.call("reality.list", {}).data.length, 1);
+});
+
+suite.test("an out-of-scope call refuses — { ok:false }, never thrown", function(a){
+  var f = rig();
+  var app = f.P.registerApp({ name: "Tide Watcher", owner: "dana", scopes: ["reality.observe"] });
+  var c = f.P.client(app.key);
+  var r = c.call("decision.propose", { question: "q?", options: ["a","b"] });
+  a.equal(r.ok, false);
+  a.ok(r.error.indexOf("out of scope") >= 0, r.error);
+  a.equal(f.os.memory.recall({ type: "decision" }).length, 0, "nothing slipped through");
+});
+
+suite.test("scope grammar: exact op, group wildcard, and full access", function(a){
+  var f = rig();
+  var group = f.P.registerApp({ name: "Reality Only", owner: "dana", scopes: ["reality.*"] });
+  var cg = f.P.client(group.key);
+  a.equal(cg.call("reality.observe", { observation: "x", source: "s" }).ok, true, "group wildcard allows the group");
+  a.equal(cg.call("knowledge.learn", { statement: "s" }).ok, false, "…and only the group");
+  var full = f.P.registerApp({ name: "Trusted", owner: "dana", scopes: ["*"] });
+  a.equal(f.P.client(full.key).call("knowledge.learn", { statement: "the sea is deep" }).ok, true, "* allows all");
+  a.equal(OceanicCore.createPlatform.inScope(["reality.*"], "reality.observe"), true);
+  a.equal(OceanicCore.createPlatform.inScope(["reality.*"], "realityx.observe"), false, "the wildcard respects the dot boundary");
+});
+
+suite.test("an unknown key is refused at the door", function(a){
+  var f = rig();
+  a.throws(function(){ f.P.client("ok_forged_key"); }, "unknown key");
+});
+
+suite.test("revocation kills the key on the very next call — openly, with a reason", function(a){
+  var f = rig();
+  var app = f.P.registerApp({ name: "Tide Watcher", owner: "dana", scopes: ["reality.*"] });
+  var c = f.P.client(app.key);
+  a.equal(c.call("reality.observe", { observation: "before", source: "s" }).ok, true);
+  a.throws(function(){ f.P.revoke("tide-watcher"); }, "a revocation must say why");
+  var rev = f.P.revoke("tide-watcher", "the app leaked its key");
+  a.equal(rev.status, "revoked");
+  var r = c.call("reality.observe", { observation: "after", source: "s" });
+  a.equal(r.ok, false, "the already-issued client went dead");
+  a.ok(r.error.indexOf("leaked") >= 0, "the reason travels with the refusal");
+  a.throws(function(){ f.P.revoke("tide-watcher", "again"); }, "cannot revoke twice");
+  a.ok(f.os.memory.status().superseded >= 1, "revocation is an open amendment — the active record is preserved beneath");
+});
+
+suite.test("every call is audited — usage counts calls, denials, and ops", function(a){
+  var f = rig();
+  var app = f.P.registerApp({ name: "Tide Watcher", owner: "dana", scopes: ["reality.observe"] });
+  var c = f.P.client(app.key);
+  var before = f.log.status().emitted;
+  c.call("reality.observe", { observation: "x", source: "s" });
+  c.call("decision.propose", { question: "q?", options: ["a","b"] }); // out of scope
+  c.call("reality.observe", { observation: "y", source: "s" });
+  var u = f.P.usage("tide-watcher");
+  a.equal(u.calls, 3);
+  a.equal(u.denied, 1);
+  a.deepEqual(u.byOp, { "reality.observe": 2, "decision.propose": 1 });
+  a.ok(f.log.status().emitted > before, "and the operational log saw every one");
+  a.throws(function(){ f.P.usage("ghost"); }, "usage of an unknown app refused");
+});
+
+suite.test("the engines' own laws still hold UNDER the platform", function(a){
+  var f = rig();
+  var app = f.P.registerApp({ name: "Trusted", owner: "dana", scopes: ["*"] });
+  var c = f.P.client(app.key);
+  var o = c.call("reality.observe", { observation: "unverified rumor", source: "app" });
+  var d = c.call("decision.propose", { question: "act?", options: ["y","n"], grounds: [o.data.id] });
+  var r = c.call("decision.decide", { id: d.data.id, choice: "y" });
+  a.equal(r.ok, false, "in scope, but the Decision Engine still refuses an unverified ground");
+  a.ok(r.error.indexOf("verified") >= 0 || r.error.length > 0, r.error);
+});
+
+suite.test("a scoped describe() shows an app ONLY what it may do", function(a){
+  var f = rig();
+  var app = f.P.registerApp({ name: "Reality Only", owner: "dana", scopes: ["reality.*"] });
+  var d = f.P.client(app.key).describe();
+  a.ok(d.operations.length >= 4, "the reality group is visible");
+  d.operations.forEach(function(op){ a.ok(op.name.indexOf("reality.") === 0, op.name + " is in scope"); });
+});
+
+suite.test("the register and status() tell the fleet's story, key-free", function(a){
+  var f = rig();
+  f.P.registerApp({ name: "One", owner: "dana", scopes: ["reality.*"] });
+  f.P.registerApp({ name: "Two", owner: "dana", scopes: ["*"] });
+  f.P.revoke("two", "retired");
+  var all = f.P.apps();
+  a.equal(all.length, 2);
+  all.forEach(function(appRec){ a.equal(appRec.key, undefined, "no key material in the register"); });
+  a.deepEqual(f.P.status(), { apps: 2, active: 1, revoked: 1 });
+  a.equal(f.P.get("two").reason, "retired");
+  a.equal(f.P.get("ghost"), null);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Developer Platform";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = rig();
+  var tide = f.P.registerApp({ name: "Tide Watcher", owner: "dana", scopes: ["reality.observe","reality.list"] });
+  var chart = f.P.registerApp({ name: "Chart Plotter", owner: "dana", scopes: ["*"] });
+  var ct = f.P.client(tide.key), cc = f.P.client(chart.key);
+  ct.call("reality.observe", { observation: "spring tide at noon", source: "tide-watcher" });
+  ct.call("decision.propose", { question: "should not work", options: ["a","b"] }); // denied
+  cc.call("knowledge.learn", { statement: "tides follow the moon", topics: ["tides"] });
+  f.P.revoke("chart-plotter", "subscription lapsed");
+  cc.call("knowledge.learn", { statement: "after revocation", topics: ["x"] }); // dead key
+  var table = document.getElementById("apps");
+  f.P.apps().forEach(function(app){
+    var u = f.P.usage(app.id);
+    var row = table.insertRow();
+    row.insertCell().textContent = app.name;
+    row.insertCell().textContent = app.owner;
+    row.insertCell().textContent = app.scopes.join(", ");
+    var s = row.insertCell(); s.textContent = app.status.toUpperCase() + (app.reason ? " — " + app.reason : ""); s.className = app.status === "active" ? "pass" : "fail";
+    row.insertCell().textContent = u.calls + " (" + u.denied + ")";
+  });
+  document.getElementById("appline").textContent =
+    "every attempt above — allowed, out-of-scope, and post-revocation — is in the operational log (" +
+    f.log.status().emitted + " entries), and no key ever touched the ocean.";
+})();
+</script>
+</body>
+</html>
