@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Tokenizer</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .chips span{display:inline-block;margin:2px;padding:3px 7px;border:1px solid #12455f;border-radius:4px;font-size:12px}
+  .chips .c0{background:#0a2a3f} .chips .c1{background:#123a2a} .chips .c2{background:#3a2a12} .chips .c3{background:#2a123a}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Tokenizer</b> (build 0068, Stage 7 · Ecosystem). Byte-pair encoding, rooted faithfully in <b>Karpathy's minbpe</b> (BasicTokenizer) — train · encode · decode, deterministic, byte-safe on any Unicode. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — a tokenizer trained before your eyes</h2>
+<div id="live" class="chips"></div>
+<div id="liveline" class="note"></div>
+<div class="note">The stated limit, as always: this is minbpe's Basic variant — no regex pre-splitting, no special tokens. A teaching-grade and tooling-grade tokenizer, honest about what it is.</div>
+
+<script src="verify-engine.js"></script>
+<script src="tokenizer.js"></script>
+<script>
+"use strict";
+var T = OceanicCore.createTokenizer;
+
+var suite = OceanicCore.createVerifier({ name: "Tokenizer (build 0068)" });
+
+suite.test("factory boots; training is guarded; a vocabulary is not silently rewritten", function(a){
+  a.equal(typeof T, "function");
+  var t = T();
+  ["train","encode","decode","merges","vocabSize","tokenOf","stats","snapshot"].forEach(function(fn){
+    a.equal(typeof t[fn], "function", "exposes " + fn);
+  });
+  a.throws(function(){ t.train("", 300); }, "empty corpus refused");
+  a.throws(function(){ t.train("abc", 255); }, "vocabSize below the byte floor refused");
+  a.throws(function(){ t.train("abc", 300.5); }, "fractional vocabSize refused");
+  t.train("aabbaabb", 258);
+  a.throws(function(){ t.train("more", 300); }, "already trained — a vocabulary is not silently rewritten");
+});
+
+suite.test("untrained, it is exactly UTF-8: encode = bytes, decode = identity, vocab = 256", function(a){
+  var t = T();
+  a.equal(t.vocabSize(), 256);
+  a.deepEqual(t.encode("abc"), [97, 98, 99]);
+  a.equal(t.decode([97, 98, 99]), "abc");
+  a.deepEqual(t.merges(), []);
+});
+
+suite.test("THE ROOT'S OWN EXAMPLE — minbpe's 'aaabdaaabac' learns its canonical three merges", function(a){
+  var t = T();
+  var out = t.train("aaabdaaabac", 259);
+  a.equal(out.learned, 3);
+  a.deepEqual(t.merges(), [
+    { pair: [97, 97], id: 256 },   // 'aa' first
+    { pair: [256, 97], id: 257 },  // then 'aaa'
+    { pair: [257, 98], id: 258 }   // then 'aaab'
+  ], "the exact merge sequence minbpe documents");
+  a.deepEqual(t.encode("aaabdaaabac"), [258, 100, 258, 97, 99], "and the canonical encoding");
+  a.equal(t.decode([258, 100, 258, 97, 99]), "aaabdaaabac");
+});
+
+suite.test("training is deterministic — same corpus, same tokenizer, byte for byte", function(a){
+  var corpus = "the tide turns and the tide returns and the tide teaches";
+  var t1 = T(); t1.train(corpus, 280);
+  var t2 = T(); t2.train(corpus, 280);
+  a.equal(t1.snapshot(), t2.snapshot());
+  a.deepEqual(t1.encode(corpus), t2.encode(corpus));
+});
+
+suite.test("decode ∘ encode is IDENTITY — ascii, emoji, cyrillic, the lot", function(a){
+  var t = T();
+  t.train("the tide 🌊 ebbs and the tide 🌊 flows — прилив и отлив, tide after tide", 300);
+  ["plain ascii", "the tide 🌊 ebbs — прилив", "Ω∞ OceanicOS · 🌊🌊🌊", ""].forEach(function(s){
+    a.equal(t.decode(t.encode(s)), s, JSON.stringify(s.slice(0, 20)) + " round-trips exactly");
+  });
+});
+
+suite.test("repetition compresses — fewer tokens than bytes, and stats() says by how much", function(a){
+  var t = T();
+  var corpus = "drop drop drop drop the drop into the ocean of drops, drop by drop by drop";
+  t.train(corpus, 300);
+  var s = t.stats(corpus);
+  a.ok(s.tokens < s.bytes, s.tokens + " tokens for " + s.bytes + " bytes");
+  a.ok(s.ratio > 1.5, "ratio " + s.ratio + " — the corpus taught it something");
+  a.equal(t.stats("").tokens, 0, "empty text is zero tokens");
+});
+
+suite.test("encoding replays merges by RANK — earliest-learned first, minbpe's law", function(a){
+  var t = T();
+  t.train("aaabdaaabac", 259);
+  // 'aaab' exists only because 'aa' (rank 0) fires before 'aaa' (rank 1) before 'aaab' (rank 2)
+  a.deepEqual(t.encode("aaab"), [258], "the full chain collapses to one token");
+  a.deepEqual(t.encode("aab"), [256, 98], "'aa' merges (rank 0); (256,98) was never learned, so it stops there");
+  a.deepEqual(t.encode("aa"), [256], "the first merge alone");
+});
+
+suite.test("ambition beyond the corpus stops honestly — no pair seen twice, no merge minted", function(a){
+  var t = T();
+  var out = t.train("abcdefg", 400);
+  a.equal(out.learned, 0, "every pair appears once — merging would compress nothing");
+  a.equal(out.requested, 144);
+  a.equal(t.vocabSize(), 256, "the vocabulary did not pretend");
+});
+
+suite.test("tokenOf shows what a token IS; unknown ids are refused with the reason", function(a){
+  var t = T();
+  t.train("aaabdaaabac", 259);
+  a.deepEqual(t.tokenOf(97), { id: 97, bytes: [97], text: "a" });
+  a.deepEqual(t.tokenOf(258).bytes, [97, 97, 97, 98], "'aaab' — the concatenated ancestry");
+  a.equal(t.tokenOf(258).text, "aaab");
+  a.throws(function(){ t.tokenOf(999); }, "never learned");
+  a.throws(function(){ t.decode([256, 999]); }, "decode refuses unknown ids too");
+});
+
+suite.test("a trained tokenizer travels as JSON — snapshot/load round-trip", function(a){
+  var t = T();
+  var corpus = "the tide teaches the tide";
+  t.train(corpus, 280);
+  var again = T.load(t.snapshot());
+  a.equal(again.vocabSize(), t.vocabSize());
+  a.deepEqual(again.encode(corpus), t.encode(corpus), "the loaded twin encodes identically");
+  a.equal(again.decode(again.encode("tide 🌊")), "tide 🌊");
+  a.throws(function(){ T.load("not json"); }, "bad JSON refused");
+  a.throws(function(){ T.load(JSON.stringify({ some: "thing" })); }, "not a snapshot refused");
+  a.throws(function(){ T.load(JSON.stringify({ oceanicTokenizer: 1, merges: [[97, 97, 300]] })); }, "corrupt (non-dense ids) refused");
+});
+
+suite.test("the snapshot names its root — algorithm minbpe/basic, on the record", function(a){
+  var t = T();
+  t.train("aa aa aa", 258);
+  var snap = JSON.parse(t.snapshot());
+  a.equal(snap.algorithm, "minbpe/basic", "credit travels with the artifact");
+  a.equal(snap.oceanicTokenizer, 1);
+});
+
+suite.test("encode/decode input guards", function(a){
+  var t = T();
+  a.throws(function(){ t.encode(42); }, "encode wants a string");
+  a.throws(function(){ t.decode("abc"); }, "decode wants an array");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Tokenizer";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var t = T();
+  var corpus = "take a drop, leave a drop, return a better drop — the ocean remembers every drop";
+  t.train(corpus, 290);
+  var sentence = "return a better drop to the ocean";
+  var ids = t.encode(sentence);
+  var live = document.getElementById("live");
+  ids.forEach(function(id, i){
+    var chip = document.createElement("span");
+    chip.className = "c" + (i % 4);
+    var tk = t.tokenOf(id);
+    chip.textContent = JSON.stringify(tk.text).slice(1, -1) + " ·" + id;
+    live.appendChild(chip);
+  });
+  var s = t.stats(sentence);
+  document.getElementById("liveline").textContent =
+    "trained on the doctrine (" + t.merges().length + " merges learned) — \"" + sentence + "\" → " +
+    s.tokens + " tokens for " + s.bytes + " bytes (ratio " + s.ratio + "), and decode(encode(x)) === x: " +
+    (t.decode(ids) === sentence ? "✓" : "✗");
+})();
+</script>
+</body>
+</html>
