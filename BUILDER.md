@@ -54,7 +54,7 @@ Observe. Verify. Build **one** capability. Test. Record. Release. Continue.
 | 0 — Foundation | ✅ COMPLETE | `charter-v1.0.0` tag · Core heartbeat `core/` |
 | 1 — Core | ✅ COMPLETE (8/8) | Heartbeat ✅ (0003) · Verification Engine ✅ (0004) · Memory ✅ (0005) · Build Registry ✅ (0006) · Reality Engine ✅ (0007) · Decision Engine ✅ (0008) · Knowledge Engine ✅ (0009) · Projects Engine ✅ (`core/projects-engine.js`, 0010) |
 | 2 — Builder | ✅ COMPLETE (8/8) | Kernel ✅ (0011) · CLI ✅ (0012) · Continuous Verification ✅ (0013) · Logging ✅ (0014) · Versioning ✅ (0015) · Automation ✅ (0016) · API ✅ (0017) · Documentation ✅ (`core/docs.js`, 0018) |
-| 3 — Applications | 🔨 IN PROGRESS (3/7) | Web — Harbor ✅ (0019) · Developer SDK ✅ (0020) · AI Agents ✅ (`core/agent.js`, 0021) · Mobile · Desktop · Terminal · Extensions remain |
+| 3 — Applications | 🔨 IN PROGRESS (4/7) | Web — Harbor ✅ (0019) · Developer SDK ✅ (0020) · AI Agents ✅ (`core/agent.js`, 0021) · Living Tokenization Studio ✅ (`core/tokenizer.js` + `core/studio.html`, 0025 — the Vision Edition's declared Root) · Mobile · Desktop · Terminal · Extensions remain |
 | 4–8 | 🌊 open water | — |
 
 See [BUILD_LOG.md](BUILD_LOG.md) for every verified capability.

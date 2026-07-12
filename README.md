@@ -24,6 +24,12 @@ It also carries the **[Ω∞ OceanicOS Living Agnostic Charter](Ω∞%20OceanicO
 | Living Charter (native) | 1.0.0 | 2026-07-08 | LIVING |
 | Living Agnostic Charter (Vision Ω∞∞V) | 2.0.1 | 2026-07-12 | LIVING |
 
+## The system it governs
+
+The Charter is not only text — a live, zero-runtime OceanicOS is built under it in [`core/`](core/), one verified capability at a time (see [BUILD_LOG.md](BUILD_LOG.md)). Every capability ships with a browser verification suite; [`core/verify-all.html`](core/verify-all.html) is the single green light (**19/19 suites, 241 assertions**).
+
+The Vision Edition of the Agnostic Charter declares a **Root** — `minbpe` (Karpathy) — and a **Kernel**, the *Living Tokenization Studio*. That Root is now realized: [`core/studio.html`](core/studio.html) (engine: [`core/tokenizer.js`](core/tokenizer.js)) trains a byte-level BPE tokenizer, shows it learn, and reads it back — `decode(encode(text)) === text`, always.
+
 ## Provenance
 
 The Charter lives natively inside the OCEANICOS Obsidian vault, where `[[wikilinks]]` resolve to the system it governs (Kai, the Memory Ocean, the Drop → Wisdom flow). This repository mirrors it for the open water.

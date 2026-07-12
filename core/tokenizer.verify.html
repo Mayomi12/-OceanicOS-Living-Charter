@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Tokenizer</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:820px;margin:auto}
+  h1{font-size:18px} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:20px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Tokenizer — Living Tokenization Studio engine</b> (build 0025, Stage 3). Suite runs on the <b>Verification Engine</b> (build 0004). Root of the Charter's Vision Edition: minbpe (Karpathy).</div>
+<div id="suite"></div>
+<div class="note">Byte-level BPE · decode(encode(s)) === s always · unknown ids refused, never guessed · trained model is portable data.</div>
+
+<script src="verify-engine.js"></script>
+<script src="tokenizer.js"></script>
+<script>
+"use strict";
+var createTokenizer = OceanicCore.createTokenizer;
+var suite = OceanicCore.createVerifier({ name: "Tokenizer (build 0025)" });
+
+suite.test("factory exists and exposes the full API", function(a){
+  var tk = createTokenizer();
+  a.ok(typeof createTokenizer === "function", "factory");
+  ["train","encode","decode","getStats","merges","vocabSize","exportModel","loadModel","status","reset"].forEach(function(fn){
+    a.equal(typeof tk[fn], "function", "api has " + fn);
+  });
+});
+
+suite.test("self-contained UTF-8 codec round-trips ASCII, accents, CJK and emoji", function(a){
+  var u = createTokenizer._utf8;
+  ["", "hello", "héllo café", "世界 中文", "🌊♾️∞ Ω"].forEach(function(s){
+    a.equal(u.decode(u.encode(s)), s, "roundtrip: " + s);
+  });
+  a.deepEqual(u.encode("A"), [65], "ASCII 'A' is one byte 65");
+  a.equal(u.encode("🌊").length, 4, "a 4-byte emoji encodes to 4 bytes");
+});
+
+suite.test("untrained: encode is the raw UTF-8 byte stream, decode inverts it", function(a){
+  var tk = createTokenizer();
+  a.deepEqual(tk.encode("A"), [65], "single ASCII byte");
+  a.equal(tk.vocabSize(), 256, "base vocab is the 256 bytes");
+  a.equal(tk.status().trained, false, "not trained yet");
+  var s = "the ocean is deep 🌊";
+  a.equal(tk.decode(tk.encode(s)), s, "round-trip holds before any training");
+});
+
+suite.test("train reproduces minbpe's canonical example exactly", function(a){
+  // Karpathy's minbpe README: "aaabdaaabac", 3 merges -> ids [258,100,258,97,99]
+  var tk = createTokenizer();
+  var text = "aaabdaaabac";
+  var rep = tk.train(text, 256 + 3);
+  a.equal(rep.mergesPerformed, 3, "3 merges performed");
+  a.equal(rep.achievedVocabSize, 259, "vocab grew to 259");
+  a.deepEqual(tk.encode(text), [258,100,258,97,99], "canonical minbpe token ids");
+  a.equal(tk.encode(text).length, 5, "11 bytes compressed to 5 tokens");
+});
+
+suite.test("merges are learned in order, minting ids 256, 257, 258 …", function(a){
+  var tk = createTokenizer();
+  tk.train("aaabdaaabac", 256 + 3);
+  var m = tk.merges();
+  a.equal(m.length, 3, "three merges recorded");
+  a.deepEqual(m[0], { index:0, pair:[97,97], id:256 }, "first merge: (a,a)->256");
+  a.deepEqual(m[1], { index:1, pair:[256,97], id:257 }, "second merge composes on the first");
+  a.deepEqual(m[2], { index:2, pair:[257,98], id:258 }, "third merge composes further");
+});
+
+suite.test("training is deterministic and ties break by first occurrence", function(a){
+  var tk1 = createTokenizer(), tk2 = createTokenizer();
+  var text = "abababcdcdcd repeated abababcdcdcd";
+  var r1 = tk1.train(text, 280), r2 = tk2.train(text, 280);
+  a.deepEqual(tk1.merges(), tk2.merges(), "same input, same merges every run");
+  a.equal(r1.mergesPerformed, r2.mergesPerformed, "same merge count");
+});
+
+suite.test("decode(encode(s)) === s for arbitrary text after training (nothing lost)", function(a){
+  var tk = createTokenizer();
+  var corpus = "the sea, the sea, the deep blue sea — 🌊 世界 café héllo ∞∞∞";
+  tk.train(corpus + " " + corpus, 320);
+  ["", "a", "the sea", "🌊 世界", "café", "unseen words entirely", corpus].forEach(function(s){
+    a.equal(tk.decode(tk.encode(s)), s, "round-trip: " + JSON.stringify(s));
+  });
+});
+
+suite.test("training compresses: token count <= byte count, ratio reported honestly", function(a){
+  var tk = createTokenizer();
+  var text = "abc abc abc abc abc abc abc abc";
+  var rep = tk.train(text, 300);
+  a.ok(rep.tokens <= rep.inputBytes, "never more tokens than bytes");
+  a.ok(rep.tokens < rep.inputBytes, "repetitive text actually compresses");
+  a.ok(rep.compression > 1, "compression ratio > 1 on repetitive text");
+});
+
+suite.test("honest early stop: asking for more merges than the text can yield", function(a){
+  var tk = createTokenizer();
+  var rep = tk.train("ab", 1000);           // only one pair exists
+  a.equal(rep.mergesRequested, 744, "requested = vocabSize - 256");
+  a.equal(rep.mergesPerformed, 1, "only the merges the text supports are made");
+  a.equal(tk.vocabSize(), 257, "vocab reflects what was actually learned");
+});
+
+suite.test("decode refuses an unknown id — no silent guessing", function(a){
+  var tk = createTokenizer();
+  a.throws(function(){ tk.decode([999999]); }, "unknown id is refused");
+  a.throws(function(){ tk.decode("not an array"); }, "non-array is refused");
+  a.equal(tk.decode([104,105]), "hi", "known byte ids still decode");
+});
+
+suite.test("train validates vocabSize (integer >= 256)", function(a){
+  var tk = createTokenizer();
+  a.throws(function(){ tk.train("x", 100); }, "below the byte alphabet is refused");
+  a.throws(function(){ tk.train("x", 256.5); }, "non-integer is refused");
+  a.throws(function(){ tk.train("x", "lots"); }, "non-number is refused");
+  var rep = tk.train("x", 256);                 // exactly 256 = no merges, valid
+  a.equal(rep.mergesPerformed, 0, "vocabSize 256 trains zero merges");
+});
+
+suite.test("a trained model is portable data: exportModel / loadModel reproduce encoding", function(a){
+  var tk = createTokenizer();
+  var text = "portability across platforms, portability across projects";
+  tk.train(text, 300);
+  var model = tk.exportModel();
+  a.ok(typeof model === "string" && model.indexOf("merges") >= 0, "model is JSON text");
+  var tk2 = createTokenizer();
+  tk2.loadModel(model);
+  a.deepEqual(tk2.merges(), tk.merges(), "merges restored exactly");
+  a.deepEqual(tk2.encode(text), tk.encode(text), "loaded model encodes identically");
+  a.equal(tk2.decode(tk2.encode(text)), text, "and still round-trips");
+});
+
+suite.test("reset returns the tokenizer to the bare 256-byte alphabet", function(a){
+  var tk = createTokenizer();
+  tk.train("aaaa", 260);
+  a.ok(tk.vocabSize() > 256, "grew during training");
+  tk.reset();
+  a.equal(tk.vocabSize(), 256, "back to base");
+  a.equal(tk.merges().length, 0, "no merges remain");
+  a.equal(tk.status().trained, false, "status reflects the reset");
+});
+
+suite.test("getStats counts adjacent pairs", function(a){
+  var tk = createTokenizer();
+  var stats = tk.getStats("aaab");   // bytes: a a a b -> pairs (a,a)x2, (a,b)x1
+  a.equal(stats["97,97"], 2, "(a,a) occurs twice");
+  a.equal(stats["97,98"], 1, "(a,b) occurs once");
+});
+
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Tokenizer Verification";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>
