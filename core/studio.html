@@ -53,6 +53,13 @@ The sea receives, holds, clarifies, connects, and returns — always better than
 Take a Drop. Leave a Drop. Return a Better Drop.
 Living. Open. Platform-Agnostic. Continuous Becoming. 🌊♾️</textarea>
   <div class="row" style="margin-top:12px">
+    <div style="flex:0 0 auto">
+      <label>Tokenizer</label>
+      <select id="kind" style="background:#02101a;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-family:inherit;font-size:13px">
+        <option value="basic">Basic — byte-level (0025)</option>
+        <option value="regex">GPT-style — regex split (0026)</option>
+      </select>
+    </div>
     <div>
       <label>Target vocabulary size: <b id="vsLabel">300</b> &nbsp;(256 raw bytes + <b id="mLabel">44</b> merges)</label>
       <input type="range" id="vsize" min="256" max="512" value="300" />
@@ -62,6 +69,7 @@ Living. Open. Platform-Agnostic. Continuous Becoming. 🌊♾️</textarea>
       <button id="resetBtn">Reset</button>
     </div>
   </div>
+  <div class="sub" id="kindNote" style="margin-top:8px">Basic BPE merges the most frequent byte pairs anywhere. GPT-style first splits text into words / punctuation / numbers, then merges only inside each piece — so tokens never fuse across boundaries.</div>
   <div class="stats" id="trainStats"></div>
   <div id="mergeWrap" style="display:none">
     <h2>Merges learned <span class="sub" id="mergeCount"></span></h2>
@@ -100,10 +108,12 @@ Living. Open. Platform-Agnostic. Continuous Becoming. 🌊♾️</textarea>
 </div>
 
 <script src="tokenizer.js"></script>
+<script src="regex-tokenizer.js"></script>
 <script>
 "use strict";
-var tk = OceanicCore.createTokenizer();
 var $ = function(id){ return document.getElementById(id); };
+function makeTokenizer(){ return $("kind").value === "regex" ? OceanicCore.createRegexTokenizer() : OceanicCore.createTokenizer(); }
+var tk = makeTokenizer();
 
 // stable, readable color per token id (golden-angle hue)
 function colorFor(id){ var h = (id * 137.508) % 360; return "hsl(" + h.toFixed(0) + ",70%,72%)"; }
@@ -127,6 +137,11 @@ function syncVsize(){
   $("mLabel").textContent = v - 256;
 }
 $("vsize").addEventListener("input", syncVsize);
+$("kind").addEventListener("change", function(){
+  tk = makeTokenizer();              // swap engines; both share the same API surface
+  $("trainBtn").click();
+  $("encodeBtn").click();
+});
 
 $("trainBtn").addEventListener("click", function(){
   var rep = tk.train($("corpus").value, +$("vsize").value);
