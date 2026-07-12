@@ -93,7 +93,22 @@ Living. Open. Platform-Agnostic. Continuous Becoming. 🌊♾️</textarea>
 </div>
 
 <div class="panel">
-  <h2 style="margin-top:4px">③ Portable model</h2>
+  <h2 style="margin-top:4px">③ Vault — save models to the Memory Ocean</h2>
+  <div class="sub">A trained model is knowledge: saved with provenance, superseded openly, never erased (build 0029). Persists across reloads when served over http.</div>
+  <div class="row" style="margin-top:8px">
+    <div style="flex:0 0 auto">
+      <label for="vname">Name</label>
+      <input type="text" id="vname" value="my-tokenizer" style="width:180px" />
+    </div>
+    <div style="flex:0 0 auto;align-self:end">
+      <button class="primary" id="saveBtn">Save / Revise ▶</button>
+    </div>
+  </div>
+  <div id="vaultList" style="margin-top:12px"></div>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:4px">④ Portable model</h2>
   <div class="sub">A trained model is just data — carry it anywhere. This is the Charter's platform-agnosticism, made concrete.</div>
   <div class="row" style="margin-top:8px"><div style="flex:0 0 auto">
     <button id="exportBtn">Export model JSON</button>
@@ -109,11 +124,21 @@ Living. Open. Platform-Agnostic. Continuous Becoming. 🌊♾️</textarea>
 
 <script src="tokenizer.js"></script>
 <script src="regex-tokenizer.js"></script>
+<script src="special-tokens.js"></script>
+<script src="tokenization-sdk.js"></script>
+<script src="memory.js"></script>
+<script src="tokenizer-vault.js"></script>
 <script>
 "use strict";
 var $ = function(id){ return document.getElementById(id); };
 function makeTokenizer(){ return $("kind").value === "regex" ? OceanicCore.createRegexTokenizer() : OceanicCore.createTokenizer(); }
 var tk = makeTokenizer();
+
+// Vault backed by the Memory Ocean; localStorage persistence is failure-tolerant
+// (opaque file:// origins simply keep the ocean in-memory for the session).
+var vaultStore = null;
+try { vaultStore = window.localStorage; var _t="__oceanic_probe__"; vaultStore.setItem(_t,"1"); vaultStore.removeItem(_t); } catch(e){ vaultStore = null; }
+var vault = OceanicCore.createTokenizerVault({ memory: OceanicCore.createMemory({ name:"studio", storage: vaultStore, storageKey:"oceanicos.studio.tokenizers" }) });
 
 // stable, readable color per token id (golden-angle hue)
 function colorFor(id){ var h = (id * 137.508) % 360; return "hsl(" + h.toFixed(0) + ",70%,72%)"; }
@@ -189,6 +214,47 @@ $("encodeBtn").addEventListener("click", function(){
     : "<span class='bad'>❌ round-trip mismatch — this must never happen.</span>";
 });
 
+function renderVault(){
+  var items = vault.list();
+  if(!items.length){ $("vaultList").innerHTML = "<div class='sub'>No saved tokenizers yet.</div>"; return; }
+  var rows = ["<table><tr><th>name</th><th>kind</th><th>vocab</th><th>merges</th><th>corpus</th><th></th></tr>"];
+  items.forEach(function(m){
+    rows.push("<tr><td>"+m.name+"</td><td>"+m.kind+"</td><td>"+m.vocabSize+"</td><td>"+m.merges+
+      "</td><td>"+m.corpusBytes+" B</td><td><button data-load='"+encodeURIComponent(m.name)+"'>Load</button> "+
+      "<span class='sub'>v"+vault.history(m.name).length+"</span></td></tr>");
+  });
+  $("vaultList").innerHTML = rows.join("")+"</table>";
+  Array.prototype.forEach.call($("vaultList").querySelectorAll("button[data-load]"), function(btn){
+    btn.addEventListener("click", function(){
+      var name = decodeURIComponent(btn.getAttribute("data-load"));
+      var loaded = vault.load(name); if(!loaded) return;
+      tk = loaded;
+      var m = vault.describe(name);
+      $("kind").value = (m.kind === "regex" ? "regex" : "basic");
+      // reflect the loaded model without retraining (it is already trained)
+      var mg = tk.merges();
+      $("trainStats").innerHTML = "<div class='sub'>loaded <b>"+name+"</b> ("+m.kind+", vocab "+m.vocabSize+", "+mg.length+" merges) from the vault.</div>";
+      $("mergeWrap").style.display = mg.length ? "block" : "none";
+      $("mergeCount").textContent = "("+mg.length+")";
+      var mr = ["<tr><th>#</th><th>merged pair</th><th>&rarr; new id</th><th>expands to</th></tr>"];
+      mg.forEach(function(x){ mr.push("<tr><td>"+x.index+"</td><td>["+x.pair[0]+", "+x.pair[1]+"]</td><td>"+x.id+"</td><td><span class='tok' style='background:"+colorFor(x.id)+"'>"+showByteToken(x.id)+"</span></td></tr>"); });
+      $("mergeTable").innerHTML = mr.join("");
+      $("encodeBtn").click();
+    });
+  });
+}
+
+$("saveBtn").addEventListener("click", function(){
+  var name = ($("vname").value || "").trim();
+  if(!name){ alert("Give the tokenizer a name."); return; }
+  var opts = { kind: $("kind").value, vocabSize: +$("vsize").value, source: "Living Tokenization Studio" };
+  try {
+    if(vault.describe(name)) vault.revise(name, $("corpus").value, opts); // supersede openly
+    else vault.train(name, $("corpus").value, opts);
+    renderVault();
+  } catch(e){ alert("Could not save: " + e.message); }
+});
+
 $("exportBtn").addEventListener("click", function(){ $("modelBox").value = tk.exportModel(); });
 $("loadBtn").addEventListener("click", function(){
   try { var s = tk.loadModel($("modelBox").value); alert("Model loaded — " + s.merges + " merges, vocab " + s.vocabSize + "."); }
@@ -199,6 +265,7 @@ $("loadBtn").addEventListener("click", function(){
 syncVsize();
 $("trainBtn").click();
 $("encodeBtn").click();
+renderVault();
 </script>
 </body>
 </html>

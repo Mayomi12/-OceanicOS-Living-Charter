@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Tokenizer Vault</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:820px;margin:auto}
+  h1{font-size:18px} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:20px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Tokenizer Vault</b> (build 0029, Stage 3) — the Studio × the Memory Ocean. Composed on Memory (0005) + Tokenization SDK (0028). Suite runs on the <b>Verification Engine</b> (build 0004).</div>
+<div id="suite"></div>
+<div class="note">A trained model is knowledge · recorded in Memory with provenance · superseded openly by revise, never deleted · load rebuilds the exact tokenizer.</div>
+
+<script src="verify-engine.js"></script>
+<script src="memory.js"></script>
+<script src="tokenizer.js"></script>
+<script src="regex-tokenizer.js"></script>
+<script src="special-tokens.js"></script>
+<script src="tokenization-sdk.js"></script>
+<script src="tokenizer-vault.js"></script>
+<script>
+"use strict";
+var createTokenizerVault = OceanicCore.createTokenizerVault;
+var suite = OceanicCore.createVerifier({ name: "Tokenizer Vault (build 0029)" });
+var CORPUS = "the sea, the deep blue sea, the sea, the sea 🌊 café 世界 Drop Drop Drop";
+var TEXT = "the deep sea café 🌊";
+
+suite.test("factory exists and exposes the full API — and nothing destructive", function(a){
+  var v = createTokenizerVault();
+  a.ok(typeof createTokenizerVault === "function", "factory");
+  ["train","revise","load","describe","list","history","status"].forEach(function(fn){
+    a.equal(typeof v[fn], "function", "api has " + fn);
+  });
+  a.equal(typeof v.delete, "undefined", "no delete()");
+  a.equal(typeof v.forget, "undefined", "no forget()");
+});
+
+suite.test("train records the model in Memory with full provenance", function(a){
+  var v = createTokenizerVault();
+  var rec = v.train("charter", CORPUS, { kind:"regex", vocabSize:320, source:"Charter v1" });
+  a.equal(rec.name, "charter", "name");
+  a.equal(rec.kind, "regex", "kind stored");
+  a.ok(rec.merges > 0, "merges recorded");
+  a.ok(rec.corpusBytes > 0, "corpus size recorded");
+  a.ok(rec.corpusChecksum, "corpus checksum recorded (provenance)");
+  a.equal(rec.source, "Charter v1", "source preserved");
+  a.ok(rec.at > 0 && rec.recordId, "timestamp + memory id");
+  a.equal(v.memory.recall({ type:"tokenizer-model" }).length, 1, "one model in the ocean");
+});
+
+suite.test("load rebuilds the EXACT tokenizer from the stored model", function(a){
+  var v = createTokenizerVault();
+  v.train("t", CORPUS, { kind:"regex", vocabSize:320 });
+  var tk = v.load("t");
+  // an independently trained tokenizer of the same kind/corpus must encode identically
+  var direct = OceanicTokenizers.create("regex"); direct.train(CORPUS, 320);
+  a.deepEqual(tk.encode(TEXT), direct.encode(TEXT), "loaded model encodes identically to a fresh train");
+  a.equal(tk.decode(tk.encode(TEXT)), TEXT, "and round-trips");
+});
+
+suite.test("train refuses a duplicate name — revise() is the open path", function(a){
+  var v = createTokenizerVault();
+  v.train("dup", CORPUS, { vocabSize:300 });
+  a.throws(function(){ v.train("dup", CORPUS, { vocabSize:300 }); }, "a second train under the same name is refused");
+});
+
+suite.test("revise supersedes openly — the previous model is preserved, not erased", function(a){
+  var v = createTokenizerVault();
+  var v1 = v.train("charter", CORPUS, { vocabSize:300, source:"v1" });
+  var v2 = v.revise("charter", CORPUS + " waves waves waves waves", { source:"v2" });
+  a.equal(v2.supersedes, v1.recordId, "the new model declares what it supersedes");
+  a.equal(v.list().length, 1, "list shows one CURRENT tokenizer");
+  a.equal(v.history("charter").length, 2, "history shows BOTH versions — nothing erased");
+  a.equal(v.status().tokenizers, 1, "one current");
+  a.equal(v.status().records, 2, "two records total in the ocean");
+});
+
+suite.test("revise keeps the kind unless explicitly changed", function(a){
+  var v = createTokenizerVault();
+  v.train("k", CORPUS, { kind:"basic", vocabSize:300 });
+  var r = v.revise("k", CORPUS + " more more more");
+  a.equal(r.kind, "basic", "kind inherited from the previous version");
+  var tk = v.load("k");
+  a.equal(tk.decode(tk.encode(TEXT)), TEXT, "reloaded revised model round-trips");
+});
+
+suite.test("revise refuses an unknown name", function(a){
+  var v = createTokenizerVault();
+  a.throws(function(){ v.revise("ghost", CORPUS); }, "cannot revise what was never trained");
+});
+
+suite.test("load / describe of an unknown name is null, not an exception", function(a){
+  var v = createTokenizerVault();
+  a.equal(v.load("nope"), null, "load null");
+  a.equal(v.describe("nope"), null, "describe null");
+});
+
+suite.test("all three kinds can be vaulted and reloaded", function(a){
+  ["basic","regex","special"].forEach(function(kind){
+    var v = createTokenizerVault();
+    v.train("m", CORPUS, { kind:kind, vocabSize:300 });
+    var tk = v.load("m");
+    a.equal(tk.decode(tk.encode(TEXT)), TEXT, kind + " vaulted model round-trips");
+    a.equal(v.describe("m").kind, kind, kind + " recorded as its kind");
+  });
+});
+
+suite.test("it writes through Memory — append-only, no erase path exists", function(a){
+  var mem = OceanicCore.createMemory({ name:"shared" });
+  var v = createTokenizerVault({ memory: mem });
+  v.train("a", CORPUS, { vocabSize:300 });
+  v.revise("a", CORPUS + " x x x");
+  a.equal(mem.timeline().length, 2, "both models are in the shared ocean's timeline");
+  a.equal(typeof mem.delete, "undefined", "the underlying Memory has no delete either");
+});
+
+suite.test("a Vault rebuilt on an existing Memory recovers its index", function(a){
+  var mem = OceanicCore.createMemory({ name:"persisted" });
+  var v1 = createTokenizerVault({ memory: mem });
+  v1.train("charter", CORPUS, { vocabSize:300, source:"first session" });
+  // a NEW vault over the same memory must see the tokenizer already there
+  var v2 = createTokenizerVault({ memory: mem });
+  a.equal(v2.list().length, 1, "index rebuilt from memory");
+  var tk = v2.load("charter");
+  a.equal(tk.decode(tk.encode(TEXT)), TEXT, "and the model still works");
+});
+
+suite.test("distinct names coexist independently", function(a){
+  var v = createTokenizerVault();
+  v.train("english", CORPUS, { kind:"regex", vocabSize:300 });
+  v.train("code", "function fn(){ return fn(fn()); } function fn2(){}", { kind:"basic", vocabSize:290 });
+  a.equal(v.list().length, 2, "two tokenizers vaulted");
+  a.equal(v.describe("english").kind, "regex", "english is regex");
+  a.equal(v.describe("code").kind, "basic", "code is basic");
+});
+
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Tokenizer Vault Verification";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>
