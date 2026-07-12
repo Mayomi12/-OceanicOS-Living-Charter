@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Special Tokens</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:820px;margin:auto}
+  h1{font-size:18px} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:20px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Special Tokens</b> (build 0027, Stage 3), <b>composed on the Regex Tokenizer</b> (0026 → 0025). Suite runs on the <b>Verification Engine</b> (build 0004).</div>
+<div id="suite"></div>
+<div class="note">Special tokens are whole-string boundary markers with reserved ids above the BPE vocabulary · never split, never merged · round-trip holds · ids cannot collide with the vocabulary below.</div>
+
+<script src="verify-engine.js"></script>
+<script src="tokenizer.js"></script>
+<script src="regex-tokenizer.js"></script>
+<script src="special-tokens.js"></script>
+<script>
+"use strict";
+var createSpecialTokenizer = OceanicCore.createSpecialTokenizer;
+var suite = OceanicCore.createVerifier({ name: "Special Tokens (build 0027)" });
+
+function trained(){
+  var st = createSpecialTokenizer();
+  st.train("the sea, the deep blue sea, the sea, the sea 🌊 café 世界", 320);
+  st.registerSpecial({ "<|endoftext|>": 100257, "<|user|>": 100258, "<|assistant|>": 100259 });
+  return st;
+}
+
+suite.test("factory exists and exposes the full API", function(a){
+  var st = createSpecialTokenizer();
+  a.ok(typeof createSpecialTokenizer === "function", "factory");
+  ["registerSpecial","specialTokens","train","encode","decode","splitText","merges","vocabSize","exportModel","loadModel","status","reset"].forEach(function(fn){
+    a.equal(typeof st[fn], "function", "api has " + fn);
+  });
+  a.equal(st.status().kind, "special", "identifies itself");
+});
+
+suite.test("composed on the Regex tokenizer — BPE + split still work underneath", function(a){
+  var st = trained();
+  a.ok(st.merges().length > 0, "the underlying BPE trained");
+  a.ok(st.splitText("Hello, world!").length > 1, "the underlying regex split is available");
+  a.ok(st.vocabSize() > 256, "vocab grew from training");
+});
+
+suite.test("registerSpecial reserves ids ABOVE the BPE vocabulary", function(a){
+  var st = trained();
+  var toks = st.specialTokens();
+  a.equal(toks.length, 3, "three specials registered");
+  a.equal(st.status().specials, 3, "status reports them");
+  toks.forEach(function(t){ a.ok(t.id >= st.vocabSize(), t.token + " sits above the vocab"); });
+});
+
+suite.test("registerSpecial refuses ids that collide with the vocabulary", function(a){
+  var st = trained();
+  a.throws(function(){ st.registerSpecial({ "<|bad|>": 5 }); }, "an id inside the byte range is refused");
+  a.throws(function(){ st.registerSpecial({ "<|dup|>": 100257 }); }, "an id already taken by another special is refused");
+  a.throws(function(){ st.registerSpecial({ "<|frac|>": 100260.5 }); }, "a non-integer id is refused");
+});
+
+suite.test('allowedSpecial "none" (default): markers are ordinary text', function(a){
+  var st = trained();
+  var text = "hi<|endoftext|>there";
+  var ids = st.encode(text);                 // default none
+  a.equal(ids.indexOf(100257), -1, "the reserved id is NOT emitted");
+  a.equal(st.decode(ids), text, "round-trips as plain text");
+  a.deepEqual(st.encode(text, { allowedSpecial: "none" }), ids, "explicit none matches default");
+});
+
+suite.test('allowedSpecial "all": markers become single reserved ids, never split', function(a){
+  var st = trained();
+  var text = "hello 🌊<|endoftext|>world<|user|> café";
+  var ids = st.encode(text, { allowedSpecial: "all" });
+  a.ok(ids.indexOf(100257) >= 0, "endoftext id emitted");
+  a.ok(ids.indexOf(100258) >= 0, "user id emitted");
+  a.equal(ids.filter(function(x){ return x === 100257; }).length, 1, "the marker is exactly one token, not split");
+  a.equal(st.decode(ids), text, "decode reproduces the exact original including markers");
+});
+
+suite.test("decode(encode(s, all)) === s for many mixed strings (nothing lost)", function(a){
+  var st = trained();
+  ["", "<|endoftext|>", "a<|user|>b", "🌊<|endoftext|>世界", "no markers here at all",
+   "<|user|>hi<|assistant|>hey<|endoftext|>"].forEach(function(s){
+    a.equal(st.decode(st.encode(s, { allowedSpecial: "all" })), s, "round-trip: " + JSON.stringify(s));
+  });
+});
+
+suite.test("allowedSpecial as an explicit list lifts only those markers", function(a){
+  var st = trained();
+  var text = "a<|user|>b<|endoftext|>c";
+  var ids = st.encode(text, { allowedSpecial: ["<|user|>"] });
+  a.ok(ids.indexOf(100258) >= 0, "user marker lifted");
+  a.equal(ids.indexOf(100257), -1, "endoftext left as ordinary text");
+  a.equal(st.decode(ids), text, "still round-trips");
+  a.throws(function(){ st.encode(text, { allowedSpecial: ["<|ghost|>"] }); }, "an unregistered allowed name is refused");
+});
+
+suite.test("longest marker wins on overlap", function(a){
+  var st = createSpecialTokenizer();
+  st.train("abcabc", 260);
+  st.registerSpecial({ "<|end|>": 300, "<|endoftext|>": 301 });
+  var ids = st.encode("x<|endoftext|>y", { allowedSpecial: "all" });
+  a.ok(ids.indexOf(301) >= 0, "the longer marker matched");
+  a.equal(ids.indexOf(300), -1, "the shorter marker did not steal a prefix");
+  a.equal(st.decode(ids), "x<|endoftext|>y", "round-trips");
+});
+
+suite.test("decode refuses an unknown (non-special, non-vocab) id", function(a){
+  var st = trained();
+  a.throws(function(){ st.decode([555555]); }, "unknown id refused, not guessed");
+  a.equal(st.decode([100257]), "<|endoftext|>", "a registered special id decodes to its string");
+});
+
+suite.test("the whole model is portable: export / load restores BPE and specials", function(a){
+  var st = trained();
+  var text = "portable <|endoftext|> across <|user|> platforms 🌊";
+  var ids = st.encode(text, { allowedSpecial: "all" });
+  var model = st.exportModel();
+  a.ok(model.indexOf("special") >= 0 && model.indexOf("<|endoftext|>") >= 0, "model carries specials");
+  var st2 = createSpecialTokenizer();
+  st2.loadModel(model);
+  a.equal(st2.status().specials, 3, "specials restored");
+  a.deepEqual(st2.encode(text, { allowedSpecial: "all" }), ids, "encodes identically after load");
+  a.equal(st2.decode(ids), text, "and round-trips");
+});
+
+suite.test("reset clears BPE merges and special registrations", function(a){
+  var st = trained();
+  a.ok(st.merges().length > 0 && st.status().specials === 3, "trained with specials");
+  st.reset();
+  a.equal(st.merges().length, 0, "merges cleared");
+  a.equal(st.status().specials, 0, "specials cleared");
+  a.equal(st.vocabSize(), 256, "back to the byte alphabet");
+});
+
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Special Tokens Verification";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>
