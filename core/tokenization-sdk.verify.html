@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Tokenization SDK</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:820px;margin:auto}
+  h1{font-size:18px} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:20px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Tokenization SDK</b> (build 0028, Stage 3) — one front door to the tokenizers of 0025–0027. Suite runs on the <b>Verification Engine</b> (build 0004).</div>
+<div id="suite"></div>
+<div class="note">One import, the whole tokenization subsystem · create(kind) · describe() self-describes the three kinds · compare() shows how each tokenizes the same text · adds no new tokenization logic.</div>
+
+<script src="verify-engine.js"></script>
+<script src="tokenizer.js"></script>
+<script src="regex-tokenizer.js"></script>
+<script src="special-tokens.js"></script>
+<script src="tokenization-sdk.js"></script>
+<script>
+"use strict";
+var createTokenization = OceanicCore.createTokenization;
+var T = OceanicTokenizers; // the public namespace
+var suite = OceanicCore.createVerifier({ name: "Tokenization SDK (build 0028)" });
+
+suite.test("public namespace + factory exist with a stable shape", function(a){
+  a.ok(typeof createTokenization === "function", "OceanicCore.createTokenization");
+  a.ok(T && typeof T === "object", "OceanicTokenizers namespace");
+  ["version","create","kinds","describe","compare"].forEach(function(k){
+    a.ok(T[k] !== undefined, "namespace has " + k);
+  });
+  a.equal(T.version, "0.28.0", "version is the build version");
+});
+
+suite.test("kinds() lists the three tokenizers built in 0025–0027", function(a){
+  var t = createTokenization();
+  a.deepEqual(t.kinds(), ["basic","regex","special"], "the three kinds");
+  a.deepEqual(createTokenization.KINDS, ["basic","regex","special"], "static list matches");
+});
+
+suite.test("create(kind) returns a ready tokenizer of that kind", function(a){
+  var t = createTokenization();
+  var b = t.create("basic"), r = t.create("regex"), s = t.create("special");
+  a.equal(typeof b.encode, "function", "basic has encode");
+  a.equal(typeof r.splitText, "function", "regex exposes splitText");
+  a.equal(typeof s.registerSpecial, "function", "special exposes registerSpecial");
+  a.equal(s.status().kind, "special", "special identifies itself");
+});
+
+suite.test("create() defaults to the GPT-style regex tokenizer", function(a){
+  var t = createTokenization();
+  var tk = t.create();
+  a.ok(typeof tk.splitText === "function", "default has the regex split — it is the regex kind");
+});
+
+suite.test("create refuses an unknown kind", function(a){
+  var t = createTokenization();
+  a.throws(function(){ t.create("markov"); }, "unknown kind is refused, not silently defaulted");
+});
+
+suite.test("every kind reached through the SDK round-trips (nothing lost)", function(a){
+  var t = createTokenization();
+  var s = "the deep blue sea 🌊 café 世界";
+  a.equal(t.create("basic").decode(t.create("basic").encode(s)), s, "basic");
+  a.equal(t.create("regex").decode(t.create("regex").encode(s)), s, "regex");
+  var sp = t.create("special");
+  a.equal(sp.decode(sp.encode(s)), s, "special (no markers = ordinary text)");
+});
+
+suite.test("describe() self-describes the three kinds (frozen)", function(a){
+  var t = createTokenization();
+  var d = t.describe();
+  a.equal(d.version, "0.28.0", "carries the version");
+  a.equal(d.kinds.length, 3, "three kinds described");
+  var byKind = {}; d.kinds.forEach(function(k){ byKind[k.kind] = k; });
+  a.equal(byKind.basic.build, "0025", "basic maps to its build");
+  a.equal(byKind.regex.build, "0026", "regex maps to its build");
+  a.equal(byKind.special.build, "0027", "special maps to its build");
+  a.ok(byKind.regex.features.indexOf("chunk-bounded merges") >= 0, "features are described");
+  a.ok(Object.isFrozen(d), "the description is immutable");
+});
+
+suite.test("compare() trains each kind on one corpus and tokenizes the same text", function(a){
+  var t = createTokenization();
+  var c = t.compare("the sea the sea the sea", { vocabSize: 290 });
+  a.equal(c.results.length, 2, "basic and regex compared side by side");
+  a.ok(c.utf8Bytes > 0, "reports the UTF-8 byte length of the text");
+  c.results.forEach(function(r){
+    a.ok(r.roundTrips, r.kind + " round-trips in the comparison");
+    a.ok(r.tokens > 0, r.kind + " produced tokens");
+    a.ok(r.compression >= 1, r.kind + " compression >= 1");
+  });
+});
+
+suite.test("compare() shows the kinds differ on boundary-crossing text", function(a){
+  var t = createTokenization();
+  // 'ababab' repeated: the basic tokenizer merges across the whole run; regex,
+  // splitting on whitespace, keeps each word separate.
+  var c = t.compare("ab ab ab ab ab ab", { vocabSize: 300 });
+  var byKind = {}; c.results.forEach(function(r){ byKind[r.kind] = r; });
+  a.ok(byKind.basic.tokens <= byKind.regex.tokens, "basic merges at least as hard as regex (crosses boundaries)");
+});
+
+suite.test("the SDK adds no new logic — its handles ARE the underlying tokenizers", function(a){
+  var t = createTokenization();
+  var viaSDK = t.create("regex");
+  var direct = OceanicCore.createRegexTokenizer();
+  viaSDK.train("mirror mirror mirror", 280);
+  direct.train("mirror mirror mirror", 280);
+  a.deepEqual(viaSDK.merges(), direct.merges(), "identical behaviour to the factory it fronts");
+});
+
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Tokenization SDK Verification";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>
