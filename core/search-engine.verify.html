@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Search Engine</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:820px;margin:auto}
+  h1{font-size:18px} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:20px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Search Engine — BM25</b> (build 0030, Stage 4 · Intelligence). Analyzer = the Regex Tokenizer's word split (0026). Suite runs on the <b>Verification Engine</b> (build 0004).</div>
+<div id="suite"></div>
+<div class="note">Inverted index · BM25 ranking · rare terms weigh more · term frequency saturates · operational index (re-index / remove are maintenance, not erasure of any record).</div>
+
+<script src="verify-engine.js"></script>
+<script src="tokenizer.js"></script>
+<script src="regex-tokenizer.js"></script>
+<script src="search-engine.js"></script>
+<script>
+"use strict";
+var createSearchEngine = OceanicCore.createSearchEngine;
+var suite = OceanicCore.createVerifier({ name: "Search Engine (build 0030)" });
+
+function corpus(){
+  var s = createSearchEngine();
+  s.index("d1", "The deep blue sea is calm today", { title: "Sea" });
+  s.index("d2", "Ocean waves and sea foam on the shore", { title: "Waves" });
+  s.index("d3", "Mountains rise above the clouds", { title: "Mountains" });
+  s.index("d4", "The sea, the sea, the endless sea", { title: "Endless" });
+  return s;
+}
+
+suite.test("factory exists and exposes the full API", function(a){
+  var s = createSearchEngine();
+  a.ok(typeof createSearchEngine === "function", "factory");
+  ["index","remove","search","get","has","size","status","terms","analyze"].forEach(function(fn){
+    a.equal(typeof s[fn], "function", "api has " + fn);
+  });
+});
+
+suite.test("the analyzer is the tokenizer's word split: lowercased, punctuation dropped", function(a){
+  var s = createSearchEngine();
+  a.deepEqual(s.analyze("The Deep, blue SEA!"), ["the","deep","blue","sea"], "words only, lowercased");
+  // GPT-4-style split chunks digits in groups of <=3, so 12345 -> 123, 45 (by design)
+  a.deepEqual(s.analyze("12345 and 67"), ["123","45","and","67"], "numbers kept as terms (chunked in <=3s)");
+  a.deepEqual(s.analyze("!!! ... ,,,"), [], "pure punctuation yields no terms");
+});
+
+suite.test("index reports term counts and grows the corpus", function(a){
+  var s = createSearchEngine();
+  var r = s.index("d1", "the sea the sea");
+  a.equal(r.terms, 4, "four term occurrences");
+  a.equal(r.unique, 2, "two unique terms");
+  a.equal(s.size(), 1, "one document");
+  a.ok(s.has("d1"), "document is present");
+});
+
+suite.test("search ranks the most relevant document first", function(a){
+  var s = corpus();
+  var r = s.search("sea");
+  a.ok(r.length >= 3, "matches the sea docs");
+  a.equal(r[0].id, "d4", "d4 (sea x3) ranks first");
+  a.ok(r.every(function(x){ return x.id !== "d3"; }), "the mountains doc does not match");
+});
+
+suite.test("BM25: a rarer query term contributes more weight (IDF)", function(a){
+  var s = corpus();
+  // 'calm' appears in exactly one doc (d1); 'the' is common — 'calm' must lift d1
+  var r = s.search("calm sea");
+  a.equal(r[0].id, "d1", "the doc with the rare term ranks first");
+  a.ok(r[0].matches.indexOf("calm") >= 0 && r[0].matches.indexOf("sea") >= 0, "both query terms matched");
+});
+
+suite.test("BM25: term frequency saturates (not linear)", function(a){
+  var s = createSearchEngine();
+  s.index("one", "sea");
+  s.index("many", "sea sea sea sea sea sea sea sea sea sea");
+  var r = s.search("sea");
+  var one = r.filter(function(x){ return x.id==="one"; })[0].score;
+  var many = r.filter(function(x){ return x.id==="many"; })[0].score;
+  a.ok(many > one, "more occurrences score higher");
+  a.ok(many < one * 10, "but 10x frequency is far less than 10x score — saturation");
+});
+
+suite.test("multi-term queries sum contributions and report matched terms", function(a){
+  var s = corpus();
+  var r = s.search("deep ocean waves");
+  a.equal(r[0].id, "d2", "d2 matches ocean AND waves, outranking deep-only d1");
+  a.deepEqual(r[0].matches.slice().sort(), ["ocean","waves"], "matched terms reported");
+});
+
+suite.test("re-indexing a document replaces its old terms cleanly", function(a){
+  var s = corpus();
+  a.ok(s.search("mountains").length >= 1, "d3 matches mountains before");
+  s.index("d3", "now d3 is about the sea instead");
+  a.equal(s.search("mountains").length, 0, "old term gone after re-index");
+  a.ok(s.search("sea").some(function(x){ return x.id==="d3"; }), "new term indexed");
+  a.equal(s.size(), 4, "still four documents (replace, not add)");
+});
+
+suite.test("remove takes a document out of the index", function(a){
+  var s = corpus();
+  a.equal(s.remove("d4"), true, "removed");
+  a.equal(s.remove("d4"), false, "removing again is a no-op false");
+  a.ok(s.search("sea").every(function(x){ return x.id!=="d4"; }), "gone from results");
+  a.equal(s.size(), 3, "count decremented");
+});
+
+suite.test("empty query and unknown terms return an empty ranking, not an error", function(a){
+  var s = corpus();
+  a.deepEqual(s.search(""), [], "empty query");
+  a.deepEqual(s.search("!!!"), [], "punctuation-only query");
+  a.deepEqual(s.search("zebra giraffe"), [], "terms absent from the corpus");
+});
+
+suite.test("limit caps the number of results", function(a){
+  var s = corpus();
+  var r = s.search("the sea", { limit: 2 });
+  a.equal(r.length, 2, "capped at two");
+});
+
+suite.test("ranking is deterministic (score desc, then id asc on ties)", function(a){
+  var a1 = createSearchEngine(), a2 = createSearchEngine();
+  ["x sea", "y sea", "z sea"].forEach(function(t,i){ a1.index("d"+i, t); a2.index("d"+i, t); });
+  a.deepEqual(a1.search("sea"), a2.search("sea"), "same corpus, same ranking");
+  var r = a1.search("sea");
+  a.ok(r[0].id <= r[1].id, "equal scores break ties by id ascending");
+});
+
+suite.test("results carry document provenance (meta)", function(a){
+  var s = corpus();
+  var r = s.search("calm");
+  a.equal(r[0].meta.title, "Sea", "the document's meta rides along with the hit");
+  a.ok(Object.isFrozen(r), "results are immutable");
+});
+
+suite.test("a custom analyzer can be injected", function(a){
+  var s = createSearchEngine({ analyzer: function(t){ return t.toUpperCase().split(/\s+/).filter(Boolean); } });
+  s.index("d1", "alpha beta");
+  a.equal(s.search("ALPHA").length, 1, "custom analyzer used for both index and query");
+  a.equal(s.search("alpha")[0].id, "d1", "query normalized the same way");
+});
+
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Search Engine Verification";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>

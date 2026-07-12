@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>🌊 Living Tokenization Studio — Ω∞ OceanicOS</title>
+<style>
+  :root{ --bg:#04141f; --panel:#07202f; --ink:#e8f6fb; --mut:#8fb3c4; --line:#12455f;
+         --grn:#34d399; --amb:#fbbf24; --red:#fb7185; --acc:#38bdf8; }
+  *{box-sizing:border-box}
+  body{font-family:Consolas,ui-monospace,monospace;background:var(--bg);color:var(--ink);
+       margin:0;padding:28px;max-width:960px;margin:auto;line-height:1.5}
+  h1{font-size:20px;margin:0 0 2px} h2{font-size:14px;color:var(--acc);margin:22px 0 8px;letter-spacing:.03em}
+  .sub{color:var(--mut);font-size:13px;margin-bottom:6px}
+  .mood{color:var(--mut);font-size:12px;font-style:italic;border-left:2px solid var(--line);padding-left:10px;margin:10px 0 4px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:12px}
+  label{display:block;color:var(--mut);font-size:12px;margin-bottom:4px}
+  textarea,input[type=text]{width:100%;background:#02101a;color:var(--ink);border:1px solid var(--line);
+       border-radius:8px;padding:10px;font-family:inherit;font-size:13px;resize:vertical}
+  textarea{min-height:92px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:end}
+  .row > div{flex:1;min-width:180px}
+  input[type=range]{width:100%}
+  button{background:#0b3244;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+       padding:9px 16px;font-family:inherit;font-size:13px;cursor:pointer;transition:.15s}
+  button:hover{background:#124258;border-color:var(--acc)}
+  button.primary{background:#0e5a4a;border-color:var(--grn)} button.primary:hover{background:#127a63}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .stat{background:#02101a;border:1px solid var(--line);border-radius:8px;padding:10px 14px;min-width:120px}
+  .stat b{display:block;font-size:22px;color:var(--grn)} .stat span{color:var(--mut);font-size:11px}
+  .tokens{margin-top:10px;line-height:2.1}
+  .tok{display:inline-block;border-radius:5px;padding:2px 6px;margin:2px 2px;font-size:12px;color:#02101a;font-weight:bold}
+  .ids{font-size:12px;color:var(--mut);word-break:break-all;margin-top:8px}
+  .ok{color:var(--grn)} .bad{color:var(--red)}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
+  td,th{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  th{color:var(--mut);font-weight:normal}
+  .foot{color:var(--mut);font-size:12px;margin-top:26px;border-top:1px solid var(--line);padding-top:12px}
+  a{color:var(--acc)}
+  code{background:#02101a;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:12px}
+</style>
+</head>
+<body>
+<h1>🌊 Living Tokenization Studio</h1>
+<div class="sub">Ω∞ OceanicOS · Build 0025 · the Root declared by the Charter's <b>Vision Edition</b>: <code>minbpe</code> (Karpathy) · zero-runtime</div>
+<div class="mood">Living • Open • Platform-Agnostic • Continuous Becoming — a byte-level BPE tokenizer you can train, watch learn, and read back. Nothing is lost: <code>decode(encode(text)) === text</code>, always.</div>
+
+<div class="panel">
+  <h2 style="margin-top:4px">① Train a vocabulary</h2>
+  <label for="corpus">Training corpus — the tokenizer learns the most frequent byte pairs and merges them.</label>
+  <textarea id="corpus">Take a Drop. Leave a Drop. Return a Better Drop.
+The sea receives, holds, clarifies, connects, and returns — always better than it arrived.
+Take a Drop. Leave a Drop. Return a Better Drop.
+Living. Open. Platform-Agnostic. Continuous Becoming. 🌊♾️</textarea>
+  <div class="row" style="margin-top:12px">
+    <div style="flex:0 0 auto">
+      <label>Tokenizer</label>
+      <select id="kind" style="background:#02101a;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-family:inherit;font-size:13px">
+        <option value="basic">Basic — byte-level (0025)</option>
+        <option value="regex">GPT-style — regex split (0026)</option>
+      </select>
+    </div>
+    <div>
+      <label>Target vocabulary size: <b id="vsLabel">300</b> &nbsp;(256 raw bytes + <b id="mLabel">44</b> merges)</label>
+      <input type="range" id="vsize" min="256" max="512" value="300" />
+    </div>
+    <div style="flex:0 0 auto">
+      <button class="primary" id="trainBtn">Train ▶</button>
+      <button id="resetBtn">Reset</button>
+    </div>
+  </div>
+  <div class="sub" id="kindNote" style="margin-top:8px">Basic BPE merges the most frequent byte pairs anywhere. GPT-style first splits text into words / punctuation / numbers, then merges only inside each piece — so tokens never fuse across boundaries.</div>
+  <div class="stats" id="trainStats"></div>
+  <div id="mergeWrap" style="display:none">
+    <h2>Merges learned <span class="sub" id="mergeCount"></span></h2>
+    <div style="max-height:220px;overflow:auto">
+      <table id="mergeTable"><tr><th>#</th><th>merged pair</th><th>&rarr; new id</th><th>expands to</th></tr></table>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:4px">② Encode &amp; decode</h2>
+  <label for="sample">Text to tokenize (try words the corpus never saw — it still round-trips):</label>
+  <textarea id="sample" style="min-height:60px">Return a Better Drop to the deep blue sea 🌊</textarea>
+  <div class="row" style="margin-top:10px"><div style="flex:0 0 auto">
+    <button class="primary" id="encodeBtn">Tokenize ▶</button>
+  </div></div>
+  <div class="stats" id="encStats"></div>
+  <div class="tokens" id="tokenView"></div>
+  <div class="ids" id="idView"></div>
+  <div id="rtView" style="margin-top:10px;font-size:13px"></div>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:4px">③ Vault — save models to the Memory Ocean</h2>
+  <div class="sub">A trained model is knowledge: saved with provenance, superseded openly, never erased (build 0029). Persists across reloads when served over http.</div>
+  <div class="row" style="margin-top:8px">
+    <div style="flex:0 0 auto">
+      <label for="vname">Name</label>
+      <input type="text" id="vname" value="my-tokenizer" style="width:180px" />
+    </div>
+    <div style="flex:0 0 auto;align-self:end">
+      <button class="primary" id="saveBtn">Save / Revise ▶</button>
+    </div>
+  </div>
+  <div id="vaultList" style="margin-top:12px"></div>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:4px">④ Portable model</h2>
+  <div class="sub">A trained model is just data — carry it anywhere. This is the Charter's platform-agnosticism, made concrete.</div>
+  <div class="row" style="margin-top:8px"><div style="flex:0 0 auto">
+    <button id="exportBtn">Export model JSON</button>
+    <button id="loadBtn">Load model JSON</button>
+  </div></div>
+  <textarea id="modelBox" style="min-height:56px;margin-top:10px" placeholder="exported model appears here; paste one and Load"></textarea>
+</div>
+
+<div class="foot">
+  Engine: <code>core/tokenizer.js</code> · Verified: <a href="tokenizer.verify.html">tokenizer.verify.html</a> · All suites: <a href="verify-all.html">verify-all.html</a><br/>
+  <a href="../Ω∞ OceanicOS Living Agnostic Charter.md">Living Agnostic Charter — Vision Edition (Ω∞∞V)</a> · <a href="harbor.html">Harbor</a> · `RUN` 💧
+</div>
+
+<script src="tokenizer.js"></script>
+<script src="regex-tokenizer.js"></script>
+<script src="special-tokens.js"></script>
+<script src="tokenization-sdk.js"></script>
+<script src="memory.js"></script>
+<script src="tokenizer-vault.js"></script>
+<script>
+"use strict";
+var $ = function(id){ return document.getElementById(id); };
+function makeTokenizer(){ return $("kind").value === "regex" ? OceanicCore.createRegexTokenizer() : OceanicCore.createTokenizer(); }
+var tk = makeTokenizer();
+
+// Vault backed by the Memory Ocean; localStorage persistence is failure-tolerant
+// (opaque file:// origins simply keep the ocean in-memory for the session).
+var vaultStore = null;
+try { vaultStore = window.localStorage; var _t="__oceanic_probe__"; vaultStore.setItem(_t,"1"); vaultStore.removeItem(_t); } catch(e){ vaultStore = null; }
+var vault = OceanicCore.createTokenizerVault({ memory: OceanicCore.createMemory({ name:"studio", storage: vaultStore, storageKey:"oceanicos.studio.tokenizers" }) });
+
+// stable, readable color per token id (golden-angle hue)
+function colorFor(id){ var h = (id * 137.508) % 360; return "hsl(" + h.toFixed(0) + ",70%,72%)"; }
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function showByteToken(id){
+  // render a token's text; make whitespace / control bytes visible
+  var t;
+  try { t = tk.decode([id]); } catch(e){ return "?"; }
+  if (t === " ") return "␣";       // ␣
+  if (t === "\n") return "⏎";      // ⏎
+  if (t === "") return "·";        // ·
+  var cp = t.codePointAt(0);
+  if (cp < 0x20 || cp === 0x7F) return "·";
+  return esc(t);
+}
+function stat(v,l){ return '<div class="stat"><b>' + v + '</b><span>' + l + '</span></div>'; }
+
+function syncVsize(){
+  var v = +$("vsize").value;
+  $("vsLabel").textContent = v;
+  $("mLabel").textContent = v - 256;
+}
+$("vsize").addEventListener("input", syncVsize);
+$("kind").addEventListener("change", function(){
+  tk = makeTokenizer();              // swap engines; both share the same API surface
+  $("trainBtn").click();
+  $("encodeBtn").click();
+});
+
+$("trainBtn").addEventListener("click", function(){
+  var rep = tk.train($("corpus").value, +$("vsize").value);
+  $("trainStats").innerHTML =
+    stat(rep.inputBytes, "input bytes") +
+    stat(rep.mergesPerformed, "merges learned") +
+    stat(rep.achievedVocabSize, "vocab size") +
+    stat(rep.tokens, "tokens (corpus)") +
+    stat(rep.compression + "×", "compression");
+  var merges = tk.merges();
+  $("mergeWrap").style.display = merges.length ? "block" : "none";
+  $("mergeCount").textContent = "(" + merges.length + ")";
+  var rows = ["<tr><th>#</th><th>merged pair</th><th>&rarr; new id</th><th>expands to</th></tr>"];
+  merges.forEach(function(m){
+    rows.push("<tr><td>" + m.index + "</td><td>[" + m.pair[0] + ", " + m.pair[1] + "]</td><td>" +
+      m.id + "</td><td><span class='tok' style='background:" + colorFor(m.id) + "'>" + showByteToken(m.id) + "</span></td></tr>");
+  });
+  $("mergeTable").innerHTML = rows.join("");
+});
+
+$("resetBtn").addEventListener("click", function(){
+  tk.reset();
+  $("trainStats").innerHTML = "<div class='sub'>reset — back to the bare 256-byte alphabet.</div>";
+  $("mergeWrap").style.display = "none";
+});
+
+$("encodeBtn").addEventListener("click", function(){
+  var text = $("sample").value;
+  var ids = tk.encode(text);
+  var utf8bytes = OceanicCore.createTokenizer._utf8.encode(text).length;
+  var ratio = ids.length ? (utf8bytes / ids.length).toFixed(2) : "0";
+  $("encStats").innerHTML =
+    stat(utf8bytes, "UTF-8 bytes") +
+    stat(ids.length, "tokens") +
+    stat(ratio + "×", "compression") +
+    stat(tk.vocabSize(), "vocab in use");
+  $("tokenView").innerHTML = ids.map(function(id){
+    return "<span class='tok' title='id " + id + "' style='background:" + colorFor(id) + "'>" + showByteToken(id) + "</span>";
+  }).join("");
+  $("idView").innerHTML = "ids: [" + ids.join(", ") + "]";
+  var back = tk.decode(ids);
+  var ok = back === text;
+  $("rtView").innerHTML = ok
+    ? "<span class='ok'>✅ decode(encode(text)) === text — nothing lost.</span>"
+    : "<span class='bad'>❌ round-trip mismatch — this must never happen.</span>";
+});
+
+function renderVault(){
+  var items = vault.list();
+  if(!items.length){ $("vaultList").innerHTML = "<div class='sub'>No saved tokenizers yet.</div>"; return; }
+  var rows = ["<table><tr><th>name</th><th>kind</th><th>vocab</th><th>merges</th><th>corpus</th><th></th></tr>"];
+  items.forEach(function(m){
+    rows.push("<tr><td>"+m.name+"</td><td>"+m.kind+"</td><td>"+m.vocabSize+"</td><td>"+m.merges+
+      "</td><td>"+m.corpusBytes+" B</td><td><button data-load='"+encodeURIComponent(m.name)+"'>Load</button> "+
+      "<span class='sub'>v"+vault.history(m.name).length+"</span></td></tr>");
+  });
+  $("vaultList").innerHTML = rows.join("")+"</table>";
+  Array.prototype.forEach.call($("vaultList").querySelectorAll("button[data-load]"), function(btn){
+    btn.addEventListener("click", function(){
+      var name = decodeURIComponent(btn.getAttribute("data-load"));
+      var loaded = vault.load(name); if(!loaded) return;
+      tk = loaded;
+      var m = vault.describe(name);
+      $("kind").value = (m.kind === "regex" ? "regex" : "basic");
+      // reflect the loaded model without retraining (it is already trained)
+      var mg = tk.merges();
+      $("trainStats").innerHTML = "<div class='sub'>loaded <b>"+name+"</b> ("+m.kind+", vocab "+m.vocabSize+", "+mg.length+" merges) from the vault.</div>";
+      $("mergeWrap").style.display = mg.length ? "block" : "none";
+      $("mergeCount").textContent = "("+mg.length+")";
+      var mr = ["<tr><th>#</th><th>merged pair</th><th>&rarr; new id</th><th>expands to</th></tr>"];
+      mg.forEach(function(x){ mr.push("<tr><td>"+x.index+"</td><td>["+x.pair[0]+", "+x.pair[1]+"]</td><td>"+x.id+"</td><td><span class='tok' style='background:"+colorFor(x.id)+"'>"+showByteToken(x.id)+"</span></td></tr>"); });
+      $("mergeTable").innerHTML = mr.join("");
+      $("encodeBtn").click();
+    });
+  });
+}
+
+$("saveBtn").addEventListener("click", function(){
+  var name = ($("vname").value || "").trim();
+  if(!name){ alert("Give the tokenizer a name."); return; }
+  var opts = { kind: $("kind").value, vocabSize: +$("vsize").value, source: "Living Tokenization Studio" };
+  try {
+    if(vault.describe(name)) vault.revise(name, $("corpus").value, opts); // supersede openly
+    else vault.train(name, $("corpus").value, opts);
+    renderVault();
+  } catch(e){ alert("Could not save: " + e.message); }
+});
+
+$("exportBtn").addEventListener("click", function(){ $("modelBox").value = tk.exportModel(); });
+$("loadBtn").addEventListener("click", function(){
+  try { var s = tk.loadModel($("modelBox").value); alert("Model loaded — " + s.merges + " merges, vocab " + s.vocabSize + "."); }
+  catch(e){ alert("Could not load model: " + e.message); }
+});
+
+// boot with a first pass so the studio is alive on open
+syncVsize();
+$("trainBtn").click();
+$("encodeBtn").click();
+renderVault();
+</script>
+</body>
+</html>

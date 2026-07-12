@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Regex Tokenizer</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:820px;margin:auto}
+  h1{font-size:18px} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:20px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Regex Tokenizer — GPT-style split</b> (build 0026, Stage 3), <b>composed on the Tokenizer</b> (build 0025). Suite runs on the <b>Verification Engine</b> (build 0004).</div>
+<div id="suite"></div>
+<div class="note">Pre-tokenize on a GPT-4-style regex · BPE runs inside each chunk only · merges never cross a chunk boundary · round-trip still holds · lossless split.</div>
+
+<script src="verify-engine.js"></script>
+<script src="tokenizer.js"></script>
+<script src="regex-tokenizer.js"></script>
+<script>
+"use strict";
+var createRegexTokenizer = OceanicCore.createRegexTokenizer;
+var createTokenizer = OceanicCore.createTokenizer;
+var suite = OceanicCore.createVerifier({ name: "Regex Tokenizer (build 0026)" });
+
+suite.test("factory exists and exposes the full API", function(a){
+  var rt = createRegexTokenizer();
+  a.ok(typeof createRegexTokenizer === "function", "factory");
+  ["train","encode","decode","splitText","merges","vocabSize","exportModel","loadModel","status","reset"].forEach(function(fn){
+    a.equal(typeof rt[fn], "function", "api has " + fn);
+  });
+  a.equal(rt.status().kind, "regex", "identifies itself as the regex variant");
+});
+
+suite.test("it is composed on the Tokenizer (build 0025) — reuses that codec", function(a){
+  // the factory throws without the 0025 codec present; here it loaded, so it built.
+  var rt = createRegexTokenizer();
+  a.equal(rt.vocabSize(), 256, "starts from the shared 256-byte alphabet");
+  a.ok(typeof createTokenizer._utf8 === "object", "the reused codec is the 0025 one");
+});
+
+suite.test("splitText cuts on the GPT-4-style pattern and is LOSSLESS", function(a){
+  var rt = createRegexTokenizer();
+  var pieces = rt.splitText("Hello, world! 123 café");
+  a.ok(pieces.length > 1, "text is split into several pieces");
+  a.equal(pieces.join(""), "Hello, world! 123 café", "pieces concatenate back to the input exactly");
+  // letters, punctuation, numbers land in different chunks
+  a.ok(pieces.indexOf("123") >= 0, "a number is its own chunk");
+});
+
+suite.test("splitText reconstructs unicode and whitespace without loss", function(a){
+  var rt = createRegexTokenizer();
+  ["café 世界 🌊", "a\n  b", "  leading", "trailing  ", ""].forEach(function(s){
+    a.equal(rt.splitText(s).join(""), s, "lossless split: " + JSON.stringify(s));
+  });
+});
+
+suite.test("THE distinguishing property: merges never cross a chunk boundary", function(a){
+  // "hi hi hi hi" — the basic tokenizer will fuse across the spaces into super-tokens;
+  // the regex tokenizer keeps each " hi" a separate chunk, so no cross-word merge exists.
+  var basic = createTokenizer(); basic.train("hi hi hi hi", 264);
+  var regex = createRegexTokenizer(); regex.train("hi hi hi hi", 264);
+  var basicPairs = basic.merges().map(function(m){ return m.pair.join(","); });
+  var regexPairs = regex.merges().map(function(m){ return m.pair.join(","); });
+  a.ok(basicPairs.indexOf("256,32") >= 0, "basic fuses a token with the following space (crosses toward next word)");
+  // in the regex variant no merge may join material from two different words:
+  // every learned merge stays within a single ' hi' chunk.
+  a.equal(regexPairs.indexOf("256,32"), -1, "regex never fuses word-then-space across the boundary");
+  a.ok(regex.merges().length >= 1, "regex still learns within-chunk merges");
+});
+
+suite.test("decode(encode(s)) === s, before AND after training (nothing lost)", function(a){
+  var rt = createRegexTokenizer();
+  var samples = ["", "a", "Hello, world!", "café 世界 🌊", "numbers 12345 and 'contractions' don't break"];
+  samples.forEach(function(s){ a.equal(rt.decode(rt.encode(s)), s, "pre-train: " + JSON.stringify(s)); });
+  rt.train("the sea, the sea, the deep blue sea, the sea 🌊 世界 café", 320);
+  samples.forEach(function(s){ a.equal(rt.decode(rt.encode(s)), s, "post-train: " + JSON.stringify(s)); });
+});
+
+suite.test("pair frequencies are counted across the whole corpus", function(a){
+  // 'the ' appears many times across chunks; its internal pair must be learnable
+  var rt = createRegexTokenizer();
+  var rep = rt.train("the the the the the the the the", 260);
+  a.ok(rep.mergesPerformed >= 2, "cross-chunk counting lets 't','h','e' merge up");
+  a.ok(rep.chunks >= 8, "corpus was split into many chunks");
+});
+
+suite.test("training is deterministic (first-occurrence tie-break)", function(a){
+  var text = "abab cdcd abab cdcd efef abab";
+  var r1 = createRegexTokenizer(); r1.train(text, 290);
+  var r2 = createRegexTokenizer(); r2.train(text, 290);
+  a.deepEqual(r1.merges(), r2.merges(), "same input, same merges every run");
+});
+
+suite.test("compression: tokens <= bytes; ratio honest", function(a){
+  var rt = createRegexTokenizer();
+  var rep = rt.train("Drop Drop Drop Drop Drop Drop Drop Drop", 300);
+  a.ok(rep.tokens <= rep.inputBytes, "never more tokens than bytes");
+  a.ok(rep.tokens < rep.inputBytes, "repetition compresses");
+  a.ok(rep.compression > 1, "ratio > 1");
+});
+
+suite.test("decode refuses unknown ids; non-array refused", function(a){
+  var rt = createRegexTokenizer();
+  a.throws(function(){ rt.decode([987654]); }, "unknown id refused");
+  a.throws(function(){ rt.decode("nope"); }, "non-array refused");
+  a.equal(rt.decode([104,105]), "hi", "known byte ids decode");
+});
+
+suite.test("train validates vocabSize (integer >= 256)", function(a){
+  var rt = createRegexTokenizer();
+  a.throws(function(){ rt.train("x", 200); }, "below alphabet refused");
+  a.throws(function(){ rt.train("x", 300.7); }, "non-integer refused");
+  var rep = rt.train("x", 256);
+  a.equal(rep.mergesPerformed, 0, "256 = zero merges");
+});
+
+suite.test("a trained model is portable data (export / load reproduce encoding)", function(a){
+  var rt = createRegexTokenizer();
+  var text = "portable across platforms, portable across projects, portable across people";
+  rt.train(text, 320);
+  var model = rt.exportModel();
+  a.ok(model.indexOf("regex") >= 0, "model records its kind");
+  var rt2 = createRegexTokenizer(); rt2.loadModel(model);
+  a.deepEqual(rt2.merges(), rt.merges(), "merges restored");
+  a.deepEqual(rt2.encode(text), rt.encode(text), "encodes identically");
+  a.equal(rt2.decode(rt2.encode(text)), text, "and round-trips");
+});
+
+suite.test("reset returns to the bare 256-byte alphabet", function(a){
+  var rt = createRegexTokenizer();
+  rt.train("aaaa bbbb aaaa", 262);
+  a.ok(rt.vocabSize() > 256, "grew");
+  rt.reset();
+  a.equal(rt.vocabSize(), 256, "back to base");
+  a.equal(rt.merges().length, 0, "no merges");
+});
+
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Regex Tokenizer Verification";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>
