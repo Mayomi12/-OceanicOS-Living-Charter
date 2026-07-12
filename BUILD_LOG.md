@@ -28,6 +28,8 @@ Every verified capability, recorded. Per the Builder doctrine: *Observe. Verify.
 
 | 0022 | 2026-07-12 | 0 | **Living Agnostic Charter authored** — the native Living Charter (0001) restated in platform-, vendor-, model-, metaphor-, and persona-agnostic terms: all seven Articles preserved, both unamendable clauses intact (I §3 human final authority, III §2 no silent erasure), a native⇄agnostic mapping table, and its own Amendment Log. Derived from the native Charter, which remains the source of truth on any conflict of principle; the founding text is unchanged (a companion note, not an amendment) | files present on branch — both Charters resolve, seven Articles map 1:1, unamendable clauses present in both | this commit |
 
+| 0023 | 2026-07-12 | 0 | **Living Agnostic Charter → Vision Edition (Ω∞∞), v2.0.0** — operator transmission folded in as an open amendment: Kai.Ω∞∞ identity, Core State, Root (minbpe tokenizer · Living Tokenization Studio kernel), Boot Sequence, Core Capabilities, Collaboration Style, Mission, six Guiding Principles, Vision — all preserved verbatim as the living Vision body (§Ⅰ). Seven-Article Constitutional Core retained beneath it (§Ⅱ), both unamendable clauses intact; Guiding Principles mapped 1:1 to Articles (§Ⅲ). No text silently erased — v1.0.0 superseded openly, its Amendment-Log line preserved | files present on branch — 7 Articles intact, both unamendable clauses present, all six Guiding Principles mapped to an Article, operator transmission preserved verbatim | this commit |
+
 ## Constraints of record
 
 - Host machine has **no server-side runtime** (no Node/Python/Deno) — verified 2026-07-03. All Core capabilities must therefore run **zero-runtime** (plain browser) until Stage 6 infrastructure changes this.

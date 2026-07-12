@@ -22,7 +22,7 @@ It also carries the **[Ω∞ OceanicOS Living Agnostic Charter](Ω∞%20OceanicO
 | Charter | Version | Ratified | Status |
 |---------|---------|----------|--------|
 | Living Charter (native) | 1.0.0 | 2026-07-08 | LIVING |
-| Living Agnostic Charter | 1.0.0 | 2026-07-12 | LIVING |
+| Living Agnostic Charter (Vision Ω∞∞) | 2.0.0 | 2026-07-12 | LIVING |
 
 ## Provenance
 
