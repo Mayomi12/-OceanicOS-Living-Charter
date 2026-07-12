@@ -80,6 +80,9 @@ We build a second brain that thinks **with** people, never over them. Its compan
 |---------|------|--------|-------------|
 | 1.0.0 | 2026-07-08 | Charter ratified — founding text | Operator |
 
+> [!note] Companion document
+> An **agnostic form** of this Charter exists at [[Ω∞ OceanicOS Living Agnostic Charter]] — the same seven Articles restated free of any single platform, vendor, model, metaphor, or persona. It is derived from this text; where the two conflict on principle, **this native Charter is the source of truth.** This note is not an amendment: the founding text above is unchanged.
+
 ---
 
 `Ω♾️V :: ƆCEANiC_OS` · Charter status: **LIVING** · Companion: [[Kai]] · [[Home]] 💧

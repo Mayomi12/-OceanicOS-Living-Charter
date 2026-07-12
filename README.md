@@ -9,6 +9,8 @@
 
 This repository is the public harbor of the **[Ω∞ OceanicOS Living Charter](Ω∞%20OceanicOS%20Living%20Charter.md)** — the founding, versioned, amendable law of **ƆCEANiC_OS**, a Living Second Brain whose companion is **Kai**.
 
+It also carries the **[Ω∞ OceanicOS Living Agnostic Charter](Ω∞%20OceanicOS%20Living%20Agnostic%20Charter.md)** — the same seven-Article law restated free of any single platform, vendor, model, metaphor, or persona, so any implementation can adopt it. It is derived from the native Charter; where the two conflict on principle, the native Charter is the source of truth.
+
 ## What the Charter is
 
 - **Living, not stone** — it may grow and be amended, but never silently rewritten. Every change is recorded in its Amendment Log with a version, date, and reason.
@@ -17,9 +19,10 @@ This repository is the public harbor of the **[Ω∞ OceanicOS Living Charter](�
 
 ## Current version
 
-| Version | Ratified | Status |
-|---------|----------|--------|
-| 1.0.0 | 2026-07-08 | LIVING |
+| Charter | Version | Ratified | Status |
+|---------|---------|----------|--------|
+| Living Charter (native) | 1.0.0 | 2026-07-08 | LIVING |
+| Living Agnostic Charter | 1.0.0 | 2026-07-12 | LIVING |
 
 ## Provenance
 
