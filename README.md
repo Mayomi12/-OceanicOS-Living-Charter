@@ -14,6 +14,7 @@ server, no build step, no dependencies.
 | **The standard** | [SPECIFICATION.md](SPECIFICATION.md) — the published contract behind "OceanicOS Compatible", with an executable checker ([core/compat.js](core/compat.js)) |
 | **The ledger** | [BUILD_LOG.md](BUILD_LOG.md) — every build 0001–0062, its verification, its release hash |
 | **The roadmap** | [BUILDER.md](BUILDER.md) — nine stages, all ✅ |
+| **The library** | [library/](library/) — five companion volumes: the [Book](library/BOOK.md) · [Living Charter](library/LIVING_CHARTER.md) · [Reference Manual](library/REFERENCE_MANUAL.md) · [Codex](library/CODEX.md) · [Handbook](library/HANDBOOK.md) |
 
 ## Try it in sixty seconds
 
