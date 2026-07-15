@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Retrospect</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  pre{background:#062033;border:1px solid #12455f;padding:12px;font-size:12px;white-space:pre-wrap;margin-top:12px}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Retrospect</b> (build 0076, Stage 8 · Stewardship). A pure as-of time lens over the append-only Memory Ocean (0005) — it recovers the current view the ocean held at any past moment. Writes nothing. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — one fact, three states, three moments in time</h2>
+<pre id="live"></pre>
+<div class="note">The ocean does not only remember every record; it remembers every state it ever held. Nothing was erased to move from one state to the next.</div>
+
+<script src="verify-engine.js"></script>
+<script src="memory.js"></script>
+<script src="retrospect.js"></script>
+<script>
+"use strict";
+var M = OceanicCore.createMemory;
+var R = OceanicCore.createRetrospect;
+
+// a memory with a clock WE drive, so every record's `at` is exact
+function rig(){
+  var clock = 0, n = 0;
+  var m = M({ now: function(){ return clock; }, idgen: function(){ n += 1; return "r" + n; } });
+  return {
+    m: m,
+    at: function(t){ clock = t; return this; },
+    remember: function(t, body, type){ clock = t; return m.remember({ body: body, type: type || "knowledge" }); },
+    amend: function(t, id, body){ clock = t; return m.amend(id, { body: body, type: "knowledge" }); }
+  };
+}
+function ids(list){ return list.map(function(r){ return r.id; }); }
+
+var suite = OceanicCore.createVerifier({ name: "Retrospect (build 0076)" });
+
+suite.test("factory needs a Memory; timestamps must be numeric", function(a){
+  a.equal(typeof R, "function");
+  a.throws(function(){ R(); }, "no memory refused");
+  a.throws(function(){ R({ memory: {} }); }, "an object without get/timeline refused");
+  var r = R({ memory: rig().m });
+  ["asOf","stateOf","changesBetween","span"].forEach(function(fn){ a.equal(typeof r[fn], "function", "exposes " + fn); });
+  a.throws(function(){ r.asOf("noon"); }, "asOf wants a number");
+  a.throws(function(){ r.changesBetween(1, "later"); }, "changesBetween wants numbers");
+});
+
+suite.test("before a record exists it is not in the view; from its moment on, it is (inclusive)", function(a){
+  var g = rig(); var r = R({ memory: g.m });
+  var A = g.remember(10, "the tide turned at six");
+  a.deepEqual(ids(r.asOf(9)), [], "one tick before it was appended: not yet current");
+  a.deepEqual(ids(r.asOf(10)), [A.id], "at its exact timestamp: current (inclusive)");
+  a.deepEqual(ids(r.asOf(1000)), [A.id], "and still current later");
+});
+
+suite.test("a correction changes the CURRENT view at its moment — the old view is still recoverable", function(a){
+  var g = rig(); var r = R({ memory: g.m });
+  var A = g.remember(10, "tide turns near five");
+  var B = g.amend(20, A.id, "tide turns near six");
+  a.deepEqual(ids(r.asOf(10)), [A.id], "as of 10, the view read 'five'");
+  a.deepEqual(ids(r.asOf(15)), [A.id], "as of 15, still 'five' — the correction hadn't landed");
+  a.deepEqual(ids(r.asOf(20)), [B.id], "as of 20, the view flips to 'six' (A superseded)");
+  a.deepEqual(ids(r.asOf(25)), [B.id], "and stays 'six'");
+  a.equal(g.m.get(A.id).body, "tide turns near five", "the old record was never erased — its past state is real");
+});
+
+suite.test("stateOf recovers what a lineage read at a given moment, from any member", function(a){
+  var g = rig(); var r = R({ memory: g.m });
+  var A = g.remember(10, "v1");
+  var B = g.amend(20, A.id, "v2");
+  var C = g.amend(30, B.id, "v3");
+  a.equal(r.stateOf(A.id, 5), null, "before the story began: null");
+  a.equal(r.stateOf(A.id, 15).id, A.id, "as of 15 the lineage read v1");
+  a.equal(r.stateOf(A.id, 25).id, B.id, "as of 25 it read v2");
+  a.equal(r.stateOf(A.id, 35).id, C.id, "as of 35 it read v3");
+  a.equal(r.stateOf(C.id, 15).id, A.id, "asked from the TIP, as of 15 it still read v1");
+  a.equal(r.stateOf(B.id, 30).id, C.id, "asked from the MIDDLE, as of 30 it read v3 (inclusive)");
+});
+
+suite.test("independent lineages compose in the as-of view", function(a){
+  var g = rig(); var r = R({ memory: g.m });
+  var X = g.remember(5, "a standalone fact");
+  var A = g.remember(10, "fact two v1");
+  var B = g.amend(20, A.id, "fact two v2");
+  a.deepEqual(ids(r.asOf(4)), [], "nothing yet");
+  a.deepEqual(ids(r.asOf(5)), [X.id], "just the standalone");
+  a.deepEqual(ids(r.asOf(15)), [X.id, A.id], "both lineages, each at its then-current version");
+  a.deepEqual(ids(r.asOf(20)), [X.id, B.id], "the standalone unchanged; fact two now v2");
+});
+
+suite.test("changesBetween returns each newly-current record; windows (t1,t2] tile without overlap", function(a){
+  var g = rig(); var r = R({ memory: g.m });
+  var A = g.remember(10, "v1");
+  var B = g.amend(20, A.id, "v2");
+  var C = g.remember(30, "other");
+  a.deepEqual(ids(r.changesBetween(0, 10)), [A.id], "the first window catches the origin");
+  a.deepEqual(ids(r.changesBetween(10, 30)), [B.id, C.id], "exclusive of t1: A (at 10) is not re-counted");
+  a.deepEqual(ids(r.changesBetween(30, 40)), [], "nothing appended after 30");
+  a.deepEqual(ids(r.changesBetween(30, 10)), [B.id, C.id], "a reversed window is tolerated, same result");
+  // the three windows below tile the whole timeline exactly once
+  var tiled = ids(r.changesBetween(-1, 10)).concat(ids(r.changesBetween(10, 20))).concat(ids(r.changesBetween(20, 40)));
+  a.deepEqual(tiled, [A.id, B.id, C.id], "tiling covers every record exactly once");
+});
+
+suite.test("span() reports the ocean's time extent", function(a){
+  var empty = R({ memory: rig().m });
+  a.deepEqual(empty.span(), { first: null, last: null, count: 0 }, "an empty ocean has no span");
+  var g = rig(); var r = R({ memory: g.m });
+  g.remember(10, "a"); g.remember(50, "b"); g.amend(30, g.m.timeline()[0].id, "a2");
+  var s = r.span();
+  a.equal(s.first, 10); a.equal(s.last, 50); a.equal(s.count, 3, "superseded records count toward the extent");
+});
+
+suite.test("as of 'now' the view equals Memory's own current tally", function(a){
+  var g = rig(); var r = R({ memory: g.m });
+  var A = g.remember(10, "v1"); g.amend(20, A.id, "v2");
+  g.remember(30, "other"); var D = g.remember(40, "third"); g.amend(50, D.id, "third-fixed");
+  var current = r.asOf(1e9);
+  a.equal(current.length, g.m.status().current, "as-of-now count matches memory.status().current");
+  a.equal(current.every(function(rec){ return g.m.get(rec.id).id === rec.id; }), true, "every one is a real, current record");
+});
+
+suite.test("Retrospect is a PURE READER — reading never changes the ocean", function(a){
+  var g = rig(); var r = R({ memory: g.m });
+  var A = g.remember(10, "v1"); g.amend(20, A.id, "v2");
+  var before = g.m.timeline().length;
+  r.asOf(15); r.stateOf(A.id, 15); r.changesBetween(0, 100); r.span();
+  a.equal(g.m.timeline().length, before, "the record count did not move");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Retrospect";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var g = rig();
+  var r = R({ memory: g.m });
+  var A = g.remember(100, "the channel is 4 metres deep");
+  g.amend(200, A.id, "the channel is 3.5 metres deep (silting)");
+  g.amend(300, A.id === A.id ? g.m.timeline()[1].id : A.id, "the channel is 3 metres deep (dredge overdue)");
+  function read(t){ var s = r.stateOf(A.id, t); return s ? s.body : "(nothing yet)"; }
+  document.getElementById("live").textContent =
+    "as of t=50 :  " + read(50) + "\n" +
+    "as of t=150:  " + read(150) + "\n" +
+    "as of t=250:  " + read(250) + "\n" +
+    "as of t=350:  " + read(350) + "\n\n" +
+    "records ever current in (0,350]: " + r.changesBetween(0, 350).length + " · span " + JSON.stringify(r.span());
+})();
+</script>
+</body>
+</html>
