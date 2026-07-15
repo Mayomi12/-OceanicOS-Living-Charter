@@ -1,0 +1,37 @@
+# Ω∞ OceanicOS — honest CI.
+#
+# OceanicOS is zero-runtime browser JavaScript, verified by its own in-browser
+# Continuous Verification page (core/verify-all.html). This workflow runs that
+# very page in a real headless Chromium and passes only if every capability
+# suite passes — the same green light you get opening the page yourself.
+name: Continuous Verification
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright
+        run: npm install --no-save playwright@1.48.0
+
+      - name: Install Chromium (with OS deps)
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Continuous Verification
+        run: node ci/verify.js
