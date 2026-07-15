@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Mobile</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Mobile</b> (build 0024, Stage 3 · Applications). The capture-first application — one thumb to drop an observation, one tap to triage pending reality. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+<div class="note">The Mobile application itself is <a href="mobile.html" style="color:#38bdf8">mobile.html</a> — this page verifies its logic.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="logger.js"></script>
+<script src="mobile.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newMobile(){ return OceanicCore.createMobile({ oceanic: OceanicCore.createOceanic({ now: clock, manual: true, name: "mobile-test" }), now: clock }); }
+
+var suite = OceanicCore.createVerifier({ name: "Mobile (build 0024)" });
+
+suite.test("createMobile requires an assembled system and its dependency factories", function(a){
+  a.equal(typeof OceanicCore.createMobile, "function");
+  a.throws(function(){ OceanicCore.createMobile(); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createMobile({ oceanic: OceanicCore.createOceanic({ manual:true }), deps: {} }); }, "empty deps");
+  var m = newMobile();
+  ["boot","capture","inbox","triage","home","tabs","journal","status"].forEach(function(fn){
+    a.equal(typeof m[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("a fresh app is not booted; the home screen is quiet", function(a){
+  var h = newMobile().home();
+  a.equal(h.booted, false);
+  a.equal(h.pulse, 0);
+  a.equal(h.ocean, 0);
+  a.equal(h.pending, 0);
+  a.deepEqual(h.activity, []);
+});
+
+suite.test("boot() boots the system, logs it, and is idempotent", function(a){
+  var m = newMobile();
+  var h = m.boot();
+  a.equal(h.booted, true);
+  a.equal(h.pulse, 1);
+  a.equal(h.activity.length, 1, "boot left an activity line");
+  a.ok(h.activity[0].message.indexOf("mobile online") >= 0);
+  var pulse = m.home().pulse;
+  m.boot();
+  a.equal(m.home().pulse, pulse, "second boot does nothing");
+});
+
+suite.test("capture() records an observation and the returned home reflects it", function(a){
+  var m = newMobile(); m.boot();
+  var r = m.capture("  the tide is rising  ");
+  a.equal(r.ok, true);
+  a.ok(r.id, "capture returns the new id");
+  a.equal(r.home.ocean, 1, "the returned home reflects the new record");
+  a.equal(r.home.pending, 1, "the inbox badge counts it");
+  a.equal(m.journal().length, 1);
+  a.equal(m.journal()[0].text, "the tide is rising", "text is trimmed");
+});
+
+suite.test("a blank capture is refused (ok:false), records nothing — and never throws", function(a){
+  var m = newMobile(); m.boot();
+  var r = m.capture("   ");
+  a.equal(r.ok, false);
+  a.ok(r.error.indexOf("nothing to capture") >= 0);
+  a.equal(r.home.ocean, 0, "nothing entered the ocean");
+  a.equal(m.journal().length, 0, "a refused blank leaves no journal entry");
+  a.equal(m.capture(null).ok, false, "null never throws");
+});
+
+suite.test("inbox() is the triage queue: pending only, oldest first", function(a){
+  var m = newMobile(); m.boot();
+  var first = m.capture("first drop").id;
+  var second = m.capture("second drop").id;
+  var q = m.inbox();
+  a.equal(q.length, 2);
+  a.equal(q[0].id, first, "oldest first");
+  a.equal(q[1].id, second);
+  m.triage(first, "verify");
+  q = m.inbox();
+  a.equal(q.length, 1, "verified items leave the inbox");
+  a.equal(q[0].id, second);
+});
+
+suite.test("triage() verifies | rejects | archives through the API; the badge follows", function(a){
+  var m = newMobile(); m.boot();
+  var idA = m.capture("a").id, idB = m.capture("b").id, idC = m.capture("c").id;
+  a.equal(m.home().pending, 3);
+  a.equal(m.triage(idA, "verify").ok, true);
+  a.equal(m.triage(idB, "reject").ok, true);
+  var r = m.triage(idC, "archive");
+  a.equal(r.ok, true);
+  a.equal(r.home.pending, 0, "the badge reflects every triage");
+  a.equal(r.home.engines.reality.verified, 1);
+  a.equal(r.home.engines.reality.total, 3);
+});
+
+suite.test("an unknown action or unknown id is reported (ok:false) — and never throws", function(a){
+  var m = newMobile(); m.boot();
+  var id = m.capture("x").id;
+  var r = m.triage(id, "frobnicate");
+  a.equal(r.ok, false);
+  a.ok(r.error.indexOf("unknown triage action") >= 0);
+  a.equal(m.inbox().length, 1, "the item is untouched");
+  var r2 = m.triage("obs-nope", "verify");
+  a.equal(r2.ok, false, "an engine refusal is caught and reported");
+  a.ok(r2.error && r2.error.length > 0);
+});
+
+suite.test("verification before acceptance still holds when driven from Mobile", function(a){
+  var m = newMobile(); m.boot();
+  var oid = m.capture("unconfirmed swell").id;
+  // ground a decision on the pending capture via the API, then try to decide
+  var did = m.api.call("decision.propose", { question:"act?", options:["a","b"], grounds:[oid] }).data.id;
+  var refused = m.api.call("decision.decide", { id: did, choice: "a" });
+  a.equal(refused.ok, false); a.ok(refused.error.indexOf("not verified") >= 0);
+  m.triage(oid, "verify");
+  a.equal(m.api.call("decision.decide", { id: did, choice: "a" }).ok, true, "permitted once reality is verified");
+});
+
+suite.test("journal() returns a copy — app state can't be mutated from outside", function(a){
+  var m = newMobile(); m.boot();
+  m.capture("x");
+  var j = m.journal(); j.push({ forged: true });
+  a.equal(m.journal().length, 1);
+});
+
+suite.test("tabs() and status() describe the app", function(a){
+  var m = newMobile(); m.boot();
+  var tabs = m.tabs();
+  a.equal(tabs.length, 3);
+  a.deepEqual(tabs.map(function(t){ return t.id; }), ["capture","inbox","status"]);
+  tabs.forEach(function(t){ a.ok(t.label && t.icon, t.id + " has a label and icon"); });
+  m.capture("x");
+  var s = m.status();
+  a.equal(s.booted, true);
+  a.equal(s.entries, 1);
+  a.equal(s.pending, 1);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Mobile";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>

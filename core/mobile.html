@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ω∞ OceanicOS — Mobile</title>
+<style>
+  :root{ --bg:#04141f; --panel:#061a26; --line:#12455f; --ink:#e8f6fb; --dim:#8fb3c4;
+         --ok:#34d399; --info:#38bdf8; --warn:#fbbf24; --err:#fb7185; }
+  *{box-sizing:border-box}
+  body{font-family:Consolas,ui-monospace,monospace;background:var(--bg);color:var(--ink);margin:0;line-height:1.5;
+       display:flex;justify-content:center}
+  #phone{width:100%;max-width:430px;min-height:100vh;display:flex;flex-direction:column;background:var(--panel);
+         border-left:1px solid var(--line);border-right:1px solid var(--line)}
+  header{padding:14px 16px;border-bottom:1px solid var(--line)}
+  header h1{font-size:15px;margin:0}
+  header .v{color:var(--dim);font-size:11px}
+  main{flex:1;overflow:auto;padding:14px 16px}
+  .pane{display:none} .pane.active{display:block}
+  h2{font-size:12px;margin:0 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+  #drop{width:100%;min-height:110px;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+        color:var(--ink);font-family:inherit;font-size:14px;padding:10px;resize:vertical}
+  button{font-family:inherit;border-radius:8px;border:1px solid var(--line);cursor:pointer;min-height:44px}
+  #send{width:100%;margin-top:10px;background:var(--info);color:var(--bg);font-size:15px;font-weight:bold;border:0}
+  #echo{margin-top:10px;font-size:12px;min-height:18px}
+  #echo.ok{color:var(--ok)} #echo.err{color:var(--err)}
+  .card{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+  .card .obs{font-size:13px;margin-bottom:8px}
+  .card .meta{font-size:11px;color:var(--dim);margin-bottom:8px}
+  .acts{display:flex;gap:8px}
+  .acts button{flex:1;font-size:13px;background:var(--panel);color:var(--ink)}
+  .acts .yes{color:var(--ok)} .acts .no{color:var(--err)} .acts .box{color:var(--dim)}
+  .empty{color:var(--dim);font-size:13px;font-style:italic}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+  .tile{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;text-align:center}
+  .tile .n{font-size:20px;font-weight:bold;color:var(--info)} .tile .l{font-size:10px;color:var(--dim)}
+  .engines{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .engine{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11px}
+  .engine b{color:var(--ink)} .engine span{color:var(--dim)}
+  #feed{margin:12px 0 0;padding:0;list-style:none;font-size:11px}
+  #feed li{padding:3px 0;border-bottom:1px solid #0c2c3d}
+  .lv-info{color:var(--info)} .lv-warn{color:var(--warn)} .lv-error{color:var(--err)} .lv-debug{color:var(--dim)}
+  nav{display:flex;border-top:1px solid var(--line)}
+  nav button{flex:1;background:var(--panel);color:var(--dim);border:0;border-radius:0;font-size:12px;padding:8px 0 10px}
+  nav button.active{color:var(--info);background:var(--bg)}
+  nav .badge{display:inline-block;min-width:18px;background:var(--warn);color:var(--bg);border-radius:9px;
+             font-size:10px;font-weight:bold;margin-left:4px;padding:0 4px}
+  nav .badge.zero{visibility:hidden}
+</style>
+</head>
+<body>
+<div id="phone">
+  <header>
+    <h1>Ω♾️V :: ƆCEANiC_OS — Mobile</h1>
+    <div class="v">app v<span id="appv">–</span> · system v<span id="sysv">–</span> · pulse <span id="pulse">0</span> · ocean <span id="ocean">0</span></div>
+  </header>
+  <main>
+    <section class="pane" id="pane-capture">
+      <h2>Take a Drop</h2>
+      <textarea id="drop" placeholder="What do you observe? Capture is fast and unjudged — triage later."></textarea>
+      <button id="send">💧 Capture</button>
+      <div id="echo"></div>
+    </section>
+    <section class="pane" id="pane-inbox">
+      <h2>Inbox — pending reality</h2>
+      <div id="cards"></div>
+    </section>
+    <section class="pane" id="pane-status">
+      <h2>Status</h2>
+      <div class="tiles">
+        <div class="tile"><div class="n" id="t-ocean">0</div><div class="l">ocean records</div></div>
+        <div class="tile"><div class="n" id="t-pending">0</div><div class="l">pending</div></div>
+        <div class="tile"><div class="n" id="t-verified">0</div><div class="l">verified</div></div>
+      </div>
+      <div class="engines" id="engines"></div>
+      <ul id="feed"></ul>
+    </section>
+  </main>
+  <nav id="nav"></nav>
+</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="logger.js"></script>
+<script src="mobile.js"></script>
+<script>
+"use strict";
+var app = OceanicCore.createMobile({ oceanic: OceanicCore.createOceanic({ manual: true, name: "mobile" }) });
+var active = "capture";
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function paintNav(){
+  var nav=document.getElementById("nav"); nav.innerHTML="";
+  app.tabs().forEach(function(t){
+    var b=document.createElement("button");
+    b.id="tab-"+t.id;
+    b.innerHTML=t.icon+" "+t.label+(t.id==="inbox"?' <span class="badge zero" id="badge">0</span>':"");
+    b.className=(t.id===active)?"active":"";
+    b.addEventListener("click", function(){ show(t.id); });
+    nav.appendChild(b);
+  });
+}
+function show(id){
+  active=id;
+  app.tabs().forEach(function(t){
+    document.getElementById("pane-"+t.id).className="pane"+(t.id===id?" active":"");
+    document.getElementById("tab-"+t.id).className=(t.id===id)?"active":"";
+  });
+  paint(app.home());
+}
+function paint(h){
+  document.getElementById("appv").textContent=h.version;
+  document.getElementById("sysv").textContent=h.systemVersion;
+  document.getElementById("pulse").textContent=h.pulse;
+  document.getElementById("ocean").textContent=h.ocean;
+  var badge=document.getElementById("badge");
+  if(badge){ badge.textContent=h.pending; badge.className="badge"+(h.pending?"":" zero"); }
+  document.getElementById("t-ocean").textContent=h.ocean;
+  document.getElementById("t-pending").textContent=h.pending;
+  document.getElementById("t-verified").textContent=h.engines.reality.verified;
+  var e=h.engines;
+  document.getElementById("engines").innerHTML=
+    engine("Reality", e.reality.verified+"✓ · "+e.reality.pending+"? · "+e.reality.total+" total")+
+    engine("Decisions", e.decisions.decided+" decided · "+e.decisions.open+" open")+
+    engine("Knowledge", e.knowledge.established+" · "+e.knowledge.topics+" topics")+
+    engine("Projects", e.projects.active+" active · "+e.projects.total+" total");
+  var feed=document.getElementById("feed"); feed.innerHTML="";
+  h.activity.slice().reverse().forEach(function(a){
+    var li=document.createElement("li"); li.className="lv-"+a.level; li.textContent=a.message; feed.appendChild(li);
+  });
+  paintInbox();
+}
+function engine(name, body){ return '<div class="engine"><b>'+name+'</b><br><span>'+esc(body)+'</span></div>'; }
+
+function paintInbox(){
+  var box=document.getElementById("cards"); box.innerHTML="";
+  var items=app.inbox();
+  if(!items.length){ box.innerHTML='<div class="empty">Nothing pending — the water is clear. 💧</div>'; return; }
+  items.forEach(function(o){
+    var card=document.createElement("div"); card.className="card";
+    card.innerHTML='<div class="obs">'+esc(o.observation)+'</div>'+
+      '<div class="meta">'+esc(o.id)+' · '+esc(o.source||"—")+' · '+esc(o.confidence||"—")+'</div>';
+    var acts=document.createElement("div"); acts.className="acts";
+    [["verify","✓ Verify","yes"],["reject","✗ Reject","no"],["archive","⬇ Archive","box"]].forEach(function(a){
+      var b=document.createElement("button"); b.textContent=a[1]; b.className=a[2];
+      b.addEventListener("click", function(){ paint(app.triage(o.id, a[0]).home); });
+      acts.appendChild(b);
+    });
+    card.appendChild(acts);
+    box.appendChild(card);
+  });
+}
+
+document.getElementById("send").addEventListener("click", function(){
+  var t=document.getElementById("drop");
+  var r=app.capture(t.value);
+  var echo=document.getElementById("echo");
+  if(r.ok){ t.value=""; echo.className="ok"; echo.textContent="captured "+r.id+" — triage it in the Inbox."; }
+  else { echo.className="err"; echo.textContent="! "+r.error; }
+  paint(r.home);
+});
+
+paintNav();
+paint(app.boot());
+show("capture");
+</script>
+</body>
+</html>
