@@ -2,7 +2,8 @@
 
 ```
 /
-└── Ω∞ OceanicOS Living Charter
+├── Ω∞ OceanicOS Living Charter
+└── Ω∞ OceanicOS Living Agnostic Charter
 ```
 
 > **Take a Drop. Leave a Drop. Return a Better Drop.**
@@ -15,11 +16,16 @@ This repository is the public harbor of the **[Ω∞ OceanicOS Living Charter](�
 - **Seven Articles** — Identity · Truth · Memory · The Flow · Conduct · Stewardship · Amendment.
 - **Two unamendable clauses** — humans hold final authority, and history is never silently erased.
 
-## Current version
+## The Agnostic Charter
 
-| Version | Ratified | Status |
-|---------|----------|--------|
-| 1.0.0 | 2026-07-08 | LIVING |
+The **[Ω∞ OceanicOS Living Agnostic Charter](Ω∞%20OceanicOS%20Living%20Agnostic%20Charter.md)** is the same law in exportable form: freed from every binding to a particular system, vendor, model, platform, or worldview. It names only three roles — ⟨the System⟩, ⟨the Operator⟩, ⟨the Companion⟩ — and any living knowledge system may adopt it whole by naming the roles, ratifying, and opening its own Amendment Log. The original Charter governs OceanicOS itself; the Agnostic Charter is offered to the open water.
+
+## Current versions
+
+| Document | Version | Ratified | Status |
+|----------|---------|----------|--------|
+| Living Charter | 1.0.0 | 2026-07-08 | LIVING |
+| Living Agnostic Charter | 1.0.0 | 2026-07-15 | LIVING |
 
 ## Provenance
 
