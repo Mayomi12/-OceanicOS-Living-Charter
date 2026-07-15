@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Omega (Full-Stack Assembly)</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:920px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Omega — the Full-Stack Assembly</b> (build 0069, Ω∞v). Every layer standing on ONE ocean: kernel · identity · gated API · governance · monitor · maintenance · improvement · search · privacy · preservation — with one honest instrument panel. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — the whole ship's instrument panel</h2>
+<table id="dash"><tr><th>Instrument</th><th>Reading</th></tr></table>
+<div id="dashline" class="note"></div>
+<div class="note">The laws hold across the assembly, not just within parts: anonymous cannot write, verdicts need a steward, the improvement loop ends at the human gate, and hand Omega a storage and the entire ship survives a reboot.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="identity.js"></script>
+<script src="permissions.js"></script>
+<script src="api.js"></script>
+<script src="governance.js"></script>
+<script src="graph.js"></script>
+<script src="search.js"></script>
+<script src="reason.js"></script>
+<script src="learn.js"></script>
+<script src="evaluate.js"></script>
+<script src="plan.js"></script>
+<script src="monitor.js"></script>
+<script src="maintenance.js"></script>
+<script src="improve.js"></script>
+<script src="privacy.js"></script>
+<script src="preservation.js"></script>
+<script src="omega.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function ship(opts){ opts = opts || {}; opts.now = opts.now || clock; return OceanicCore.createOmega(opts); }
+function makeStorage(){ var d = {}; return { getItem: function(k){ return (k in d) ? d[k] : null; }, setItem: function(k,v){ d[k] = v; } }; }
+
+var suite = OceanicCore.createVerifier({ name: "Omega — Full-Stack Assembly (build 0069)" });
+
+suite.test("the whole stack boots on one call, every layer present and version Ω∞v", function(a){
+  a.equal(typeof OceanicCore.createOmega, "function");
+  var o = ship();
+  a.equal(o.version, "Ω∞v");
+  ["oceanic","identity","permissions","api","governance","logger","monitor","maintenance",
+   "improve","search","privacy","preservation","dashboard","seal"].forEach(function(k){
+    a.ok(o[k], "the assembly carries " + k);
+  });
+  a.ok(o.oceanic.heartbeat.status().pulse >= 1, "and the ship is beating");
+});
+
+suite.test("ONE ocean under everything — a write through any layer is seen by all", function(a){
+  var o = ship();
+  var before = o.oceanic.memory.status().count;
+  o.identity.register({ name: "Kai", role: "steward", id: "kai" });
+  var obs = o.oceanic.reality.observe({ observation: "one shared ocean", source: "kai" });
+  a.equal(o.oceanic.memory.status().count, before + 2, "actor + observation, both in the same water");
+  a.equal(o.search.search("shared ocean").length, 1, "search sees it");
+  a.ok(o.dashboard().reality.pending >= 1, "the dashboard sees it");
+  o.oceanic.reality.verify(obs.meta.oid);
+});
+
+suite.test("ANONYMOUS CANNOT WRITE — the gated API refuses until someone takes the helm", function(a){
+  var o = ship();
+  var r = o.api.call("reality.observe", { observation: "ghost writing", source: "nobody" });
+  a.equal(r.ok, false, "refused");
+  a.ok(r.error.indexOf("permission denied") >= 0, r.error);
+  o.identity.register({ name: "Mara", id: "mara" }); // contributor by default
+  o.identity.signIn("mara");
+  var r2 = o.api.call("reality.observe", { observation: "signed and recorded", source: "mara" });
+  a.equal(r2.ok, true, "a signed-in contributor records reality");
+});
+
+suite.test("VERDICTS NEED A STEWARD — the ladder holds through the assembled stack", function(a){
+  var o = ship();
+  o.identity.register({ name: "Mara", id: "mara" });
+  o.identity.register({ name: "Kai", role: "steward", id: "kai" });
+  o.identity.signIn("mara");
+  var obs = o.api.call("reality.observe", { observation: "awaiting judgment", source: "mara" });
+  var r = o.api.call("reality.verify", { id: obs.data.id });
+  a.equal(r.ok, false, "a contributor may not pass verdicts");
+  o.identity.signIn("kai");
+  a.equal(o.api.call("reality.verify", { id: obs.data.id }).ok, true, "a steward may");
+});
+
+suite.test("a full story through the stack: observe → verify → decide → learn → found by search", function(a){
+  var o = ship();
+  o.identity.register({ name: "Kai", role: "steward", id: "kai" });
+  o.identity.signIn("kai");
+  var obs = o.api.call("reality.observe", { observation: "the sandbar shifted south", source: "survey" }).data;
+  o.api.call("reality.verify", { id: obs.id });
+  var d = o.api.call("decision.propose", { question: "reroute?", options: ["yes","no"], grounds: [obs.id] }).data;
+  a.equal(o.api.call("decision.decide", { id: d.id, choice: "yes" }).ok, true);
+  a.equal(o.api.call("knowledge.learn", { statement: "sandbars here drift south", topics: ["bars"], grounds: [obs.id] }).ok, true);
+  a.ok(o.search.search("sandbar").length >= 2, "search reaches across the whole story");
+  a.equal(o.dashboard().evaluation.grade, "A", "and the ship grades itself on it");
+});
+
+suite.test("dashboard() is one pure snapshot of the whole ship", function(a){
+  var o = ship();
+  o.identity.register({ name: "Kai", role: "steward", id: "kai" });
+  o.identity.signIn("kai");
+  var before = o.oceanic.memory.status().count;
+  var d = o.dashboard();
+  a.equal(o.oceanic.memory.status().count, before, "watching writes nothing");
+  a.equal(d.version, "Ω∞v");
+  a.equal(d.helm.id, "kai", "who is at the helm");
+  ["ocean","reality","evaluation","gate","chores","governance","improvement","actors"].forEach(function(k){
+    a.ok(d[k] !== undefined, "instrument: " + k);
+  });
+  a.ok(d.gate.indexOf("RELEASE") === 0, d.gate);
+});
+
+suite.test("governance runs through the assembly — quorum, objections, steward's hand", function(a){
+  var o = ship();
+  o.identity.register({ name: "Kai", role: "steward", id: "kai" });
+  o.identity.register({ name: "Mara", id: "mara" });
+  o.governance.propose({ title: "Name the new berth", rationale: "it needs a name", by: "mara" });
+  a.throws(function(){ o.governance.ratify("name-the-new-berth", "kai"); }, "no endorsement yet");
+  o.governance.review("name-the-new-berth", "kai", "endorse");
+  a.equal(o.governance.ratify("name-the-new-berth", "kai").status, "ratified");
+  a.equal(o.dashboard().governance.proposals, 1);
+});
+
+suite.test("the improvement loop runs INSIDE the ship — and still ends at the human gate", function(a){
+  var o = ship();
+  o.identity.register({ name: "Kai", role: "steward", id: "kai" });
+  o.identity.register({ name: "Mara", id: "mara" });
+  var keep = o.oceanic.reality.observe({ observation: "steady", source: "watch" });
+  o.oceanic.reality.verify(keep.meta.oid);
+  var c = o.improve.cycle("mara");
+  a.equal(c.proposal.status, "proposed", "proposed, not enacted");
+  o.governance.review(c.proposal.id, "kai", "endorse");
+  a.equal(o.governance.ratify(c.proposal.id, "kai").status, "ratified", "a human closed the loop");
+  a.equal(o.dashboard().improvement.proposals, 1);
+});
+
+suite.test("HAND IT A STORAGE AND THE SHIP SURVIVES A REBOOT", function(a){
+  var storage = makeStorage();
+  var o1 = ship({ storage: storage, name: "ship" });
+  o1.identity.register({ name: "Kai", role: "steward", id: "kai" });
+  var obs = o1.oceanic.reality.observe({ observation: "written before the storm", source: "kai" });
+  o1.oceanic.reality.verify(obs.meta.oid);
+  var count = o1.oceanic.memory.status().count;
+  var o2 = ship({ storage: storage, name: "ship" }); // the reboot
+  a.equal(o2.oceanic.memory.status().count, count, "every record aboard after reboot");
+  a.equal(o2.identity.get("kai").role, "steward", "the register survived");
+  a.equal(o2.identity.current(), null, "but a session is runtime-only — nobody is silently at the helm");
+  a.equal(o2.search.search("storm").length, 1, "and the new ship's layers read the old water");
+});
+
+suite.test("seal() hands back a verifiable archive of the whole ship", function(a){
+  var o = ship();
+  o.identity.register({ name: "Kai", role: "steward", id: "kai" });
+  var archive = o.seal("maiden-voyage");
+  var v = o.preservation.verify(archive);
+  a.equal(v.intact, true);
+  a.equal(v.label, "maiden-voyage");
+  var restored = o.preservation.restore(archive);
+  a.equal(restored.memory.status().count, o.oceanic.memory.status().count);
+});
+
+suite.test("privacy works the assembled water — mark, inventory, redact", function(a){
+  var o = ship();
+  o.identity.register({ name: "Kai", role: "steward", id: "kai" });
+  var obs = o.oceanic.reality.observe({ observation: "Mara berthed overnight at pier 4", source: "kai" });
+  o.privacy.mark(obs.meta.oid, { subject: "mara", sensitivity: "personal" });
+  a.equal(o.privacy.inventory("mara").length, 1);
+  o.privacy.redact(obs.meta.oid, "subject request");
+  a.equal(o.search.search("berthed").length, 0, "content withdrawn from the assembled search too");
+});
+
+suite.test("missing modules are named, not mysteriously broken", function(a){
+  a.throws(function(){ OceanicCore.createOmega({ core: { createOceanic: function(){} } }); },
+    "an incomplete core is refused with the missing factory named");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Omega";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var o = ship();
+  o.identity.register({ name: "Kai", role: "steward", id: "kai" });
+  o.identity.signIn("kai");
+  var obs = o.api.call("reality.observe", { observation: "the flagship is assembled", source: "kai" }).data;
+  o.api.call("reality.verify", { id: obs.id });
+  o.improve.cycle("kai" === "kai" ? (o.identity.register({ name: "Mara", id: "mara" }), "mara") : "mara");
+  var d = o.dashboard();
+  var rows = [
+    ["Version", d.version],
+    ["At the helm", d.helm ? d.helm.name + " (" + d.helm.role + ")" : "nobody"],
+    ["The ocean", d.ocean.count + " records (" + d.ocean.superseded + " superseded, all kept)"],
+    ["Reality", d.reality.verified + " verified · " + d.reality.pending + " pending"],
+    ["Self-evaluation", d.evaluation.grade + " (" + d.evaluation.score + "/100)"],
+    ["Release gate", d.gate],
+    ["Chores", d.chores.chores + (d.chores.clear ? " — the ship is kept" : "")],
+    ["Governance", d.governance.proposals + " proposal(s), " + d.governance.pending + " pending"],
+    ["Improvement practice", d.improvement.proposals + " proposal(s) filed by the loop"]
+  ];
+  var table = document.getElementById("dash");
+  rows.forEach(function(r){ var tr = table.insertRow(); tr.insertCell().textContent = r[0]; tr.insertCell().textContent = r[1]; });
+  document.getElementById("dashline").textContent =
+    "one call assembled all of it over one ocean — core/omega.html is this panel with hands.";
+})();
+</script>
+</body>
+</html>

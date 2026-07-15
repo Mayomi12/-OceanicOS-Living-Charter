@@ -32,6 +32,7 @@
   <li><a href="core/mobile.html">Mobile</a><span class="desc">offline-capable, persists the ocean on-device</span></li>
   <li><a href="core/docs.html">Documentation</a><span class="desc">the API manifest, rendered by the system itself</span></li>
   <li><a href="core/studio.html">Tokenization Studio</a><span class="desc">a living BPE workbench, rooted in Karpathy's minbpe</span></li>
+  <li><a href="core/omega.html">Ω∞v — the Flagship</a><span class="desc">the FULL STACK in one page: helm, gated commands, instruments, governance, the improvement loop, sealing — persists on your device</span></li>
 </ul>
 
 <h2>The documents</h2>
@@ -72,7 +73,7 @@ suite.test("the single green light is on the gate", function(a){
 
 suite.test("every application has a door", function(a){
   var hrefs = [].map.call(document.querySelectorAll("#apps a"), function(el){ return el.getAttribute("href"); });
-  ["harbor","terminal","desktop","mobile","docs","studio"].forEach(function(app){
+  ["harbor","terminal","desktop","mobile","docs","studio","omega"].forEach(function(app){
     a.ok(hrefs.some(function(h){ return h.indexOf(app + ".html") >= 0; }), app + " is reachable");
   });
 });
