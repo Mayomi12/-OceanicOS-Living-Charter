@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ω∞v OceanicOS — the Flagship</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:26px;max-width:980px;margin:auto}
+  h1{font-size:20px;margin-bottom:2px} .motto{color:#8fb3c4;font-size:13px;font-style:italic}
+  h2{font-size:14px;color:#8fb3c4;margin-top:24px;border-bottom:1px solid #12455f;padding-bottom:5px}
+  label{color:#8fb3c4;font-size:12px;display:block;margin-top:8px}
+  input[type=text],select{background:#062033;color:#e8f6fb;border:1px solid #12455f;padding:7px;font-family:inherit;font-size:13px;margin-top:3px}
+  input[type=text]{width:100%;box-sizing:border-box}
+  button{background:#0a2a3f;color:#38bdf8;border:1px solid #12455f;padding:7px 14px;font-family:inherit;font-size:13px;cursor:pointer;margin-top:8px;margin-right:6px}
+  button:hover{background:#123a55}
+  table{border-collapse:collapse;width:100%;margin-top:8px}
+  td,th{border:1px solid #12455f;padding:5px 10px;font-size:12px;text-align:left}
+  .ok{color:#34d399} .warn{color:#fbbf24} .err{color:#fb7185}
+  #helm{padding:8px 12px;border:1px solid #12455f;background:#062033;margin-top:10px;font-size:13px}
+  .cols{display:flex;flex-wrap:wrap;gap:22px} .col{flex:1;min-width:320px}
+  #out{background:#02101a;border:1px solid #12455f;padding:10px;min-height:70px;font-size:12px;white-space:pre-wrap;margin-top:8px}
+  .note{color:#8fb3c4;font-size:12px;margin-top:18px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞v OceanicOS — the Flagship</h1>
+<p class="motto">The full stack, one ocean, one page. Persists on this device (localStorage) — close it and come back; the ship remembers. Living • Open • Platform-Agnostic • Continuous Becoming.</p>
+
+<h2>The helm</h2>
+<div id="helm">nobody is at the helm — anonymous callers cannot write</div>
+<label for="who">Take the helm (registers on first use)</label>
+<input id="who" type="text" placeholder="your name" />
+<label for="role">Role (a first-time registration only — the ladder holds after that)</label>
+<select id="role" aria-label="role for first-time registration">
+  <option value="contributor">contributor — may record reality</option>
+  <option value="steward">steward — may pass verdicts and ratify</option>
+  <option value="observer">observer — may only read</option>
+</select>
+<button id="signin">Sign in</button>
+<button id="signout">Sign out</button>
+
+<div class="cols">
+<div class="col">
+<h2>Work the ocean (the gated API)</h2>
+<label for="cmd">Command — try: <code>observe the tide is rising</code> · <code>verify &lt;id&gt;</code> · <code>decide</code> guides you · <code>search tide</code></label>
+<input id="cmd" type="text" autocomplete="off" />
+<button id="run">Run</button>
+<div id="out" aria-live="polite">the ship's replies appear here</div>
+</div>
+
+<div class="col">
+<h2>The instrument panel (live)</h2>
+<table id="dash" aria-label="instrument panel"><tr><th>Instrument</th><th>Reading</th></tr></table>
+</div>
+</div>
+
+<h2>Governance — the pending motions</h2>
+<table id="gov" aria-label="pending proposals"><tr><th>Motion</th><th>By</th><th>Endorse</th><th>Object</th><th>Act</th></tr></table>
+<button id="cycle">Run one improvement cycle (the loop proposes; a steward decides)</button>
+
+<h2>Preserve</h2>
+<button id="sealBtn">Seal the ship into an archive</button>
+<label for="archive">The sealed archive (fixity inside — verify it anywhere with core/preservation.js)</label>
+<input id="archive" type="text" readonly />
+
+<div class="note">Everything on this page is the verified stack (core/omega.js, suite 59 in Continuous Verification) — this glass only holds the wheel. Anonymous cannot write · verdicts need a steward · the improvement loop ends at a human hand · nothing is ever erased.</div>
+
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="identity.js"></script>
+<script src="permissions.js"></script>
+<script src="api.js"></script>
+<script src="governance.js"></script>
+<script src="graph.js"></script>
+<script src="search.js"></script>
+<script src="reason.js"></script>
+<script src="learn.js"></script>
+<script src="evaluate.js"></script>
+<script src="plan.js"></script>
+<script src="monitor.js"></script>
+<script src="maintenance.js"></script>
+<script src="improve.js"></script>
+<script src="privacy.js"></script>
+<script src="preservation.js"></script>
+<script src="omega.js"></script>
+<script>
+"use strict";
+var storage = null;
+try { localStorage.setItem("omega.probe", "1"); storage = localStorage; } catch (e) {}
+var ship = OceanicCore.createOmega({ storage: storage, name: "flagship" });
+function el(id){ return document.getElementById(id); }
+function slug(s){ return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); }
+
+function say(text, cls){ el("out").innerHTML = cls ? '<span class="' + cls + '">' + text + "</span>" : text; }
+
+function renderHelm(){
+  var h = ship.identity.current();
+  el("helm").innerHTML = h
+    ? 'at the helm: <span class="ok">' + h.name + "</span> (" + h.role + ")"
+    : 'nobody is at the helm — anonymous callers cannot write';
+}
+function renderDash(){
+  var d = ship.dashboard();
+  var rows = [
+    ["Ω version", d.version],
+    ["Ocean", d.ocean.count + " records · " + d.ocean.superseded + " superseded (kept)" + (d.ocean.persisted ? " · persisted ✓" : "")],
+    ["Reality", d.reality.verified + " verified · " + d.reality.pending + " pending · " + d.reality.rejected + " rejected"],
+    ["Grade", d.evaluation.grade + " (" + d.evaluation.score + "/100)"],
+    ["Gate", d.gate],
+    ["Chores", d.chores.clear ? "none — the ship is kept" : d.chores.chores + " standing"],
+    ["Governance", d.governance.pending + " pending of " + d.governance.proposals],
+    ["Improvement", d.improvement.proposals + " proposal(s) filed by the loop"],
+    ["Crew", d.actors.actors + " active actor(s)"]
+  ];
+  var t = el("dash");
+  while (t.rows.length > 1) t.deleteRow(1);
+  rows.forEach(function(r){ var tr = t.insertRow(); tr.insertCell().textContent = r[0]; tr.insertCell().textContent = r[1]; });
+}
+function renderGov(){
+  var t = el("gov");
+  while (t.rows.length > 1) t.deleteRow(1);
+  ship.governance.pending().forEach(function(p){
+    var tr = t.insertRow();
+    tr.insertCell().textContent = p.title;
+    tr.insertCell().textContent = p.by;
+    tr.insertCell().textContent = p.endorsements;
+    tr.insertCell().textContent = p.objections;
+    var cell = tr.insertCell();
+    ["endorse","object","ratify","reject"].forEach(function(act){
+      var b = document.createElement("button");
+      b.textContent = act;
+      b.addEventListener("click", function(){
+        var me = ship.identity.current();
+        if (!me) return say("take the helm first — governance acts carry a name", "err");
+        try {
+          if (act === "endorse" || act === "object") ship.governance.review(p.id, me.id, act);
+          else if (act === "ratify") ship.governance.ratify(p.id, me.id);
+          else ship.governance.reject(p.id, me.id, "declined at the helm");
+          say(act + " → " + p.id, "ok");
+        } catch (e) { say(e.message, "err"); }
+        refresh();
+      });
+      cell.appendChild(b);
+    });
+  });
+}
+function refresh(){ renderHelm(); renderDash(); renderGov(); }
+
+el("signin").addEventListener("click", function(){
+  var name = el("who").value.trim();
+  if (!name) return say("a helm needs a name", "err");
+  var id = slug(name);
+  try {
+    if (!ship.identity.get(id)) ship.identity.register({ name: name, role: el("role").value, id: id });
+    ship.identity.signIn(id);
+    say("welcome, " + name + " — the ladder holds: " + ship.identity.get(id).role, "ok");
+  } catch (e) { say(e.message, "err"); }
+  refresh();
+});
+el("signout").addEventListener("click", function(){ ship.identity.signOut(); refresh(); });
+
+el("run").addEventListener("click", function(){
+  var line = el("cmd").value.trim();
+  if (!line) return;
+  var sp = line.indexOf(" ");
+  var verb = sp < 0 ? line : line.slice(0, sp);
+  var rest = sp < 0 ? "" : line.slice(sp + 1).trim();
+  var r;
+  if (verb === "observe") r = ship.api.call("reality.observe", { observation: rest, source: (ship.identity.current() || {}).id || "helm" });
+  else if (verb === "verify") r = ship.api.call("reality.verify", { id: rest });
+  else if (verb === "reject") r = ship.api.call("reality.reject", { id: rest });
+  else if (verb === "learn") r = ship.api.call("knowledge.learn", { statement: rest });
+  else if (verb === "search") { say(JSON.stringify(ship.search.search(rest).map(function(h){ return { type: h.type, id: h.id, snippet: h.snippet }; }), null, 1)); refresh(); return; }
+  else if (verb === "decide") { say("propose first through the API — decide is: reality must be VERIFIED before a decision commits on it.\nTry: observe … → verify <id> → then use api.call('decision.propose'/'decision.decide') from the console; the same laws apply.", "warn"); return; }
+  else { say("verbs: observe · verify <id> · reject <id> · learn · search <text>", "warn"); return; }
+  say(r.ok ? JSON.stringify(r.data, null, 1) : r.error, r.ok ? "ok" : "err");
+  el("cmd").value = "";
+  refresh();
+});
+
+el("cycle").addEventListener("click", function(){
+  var me = ship.identity.current();
+  if (!me) return say("take the helm first — the loop files its proposal in your name", "err");
+  try {
+    var c = ship.improve.cycle(me.id);
+    say("the loop observed: " + c.observation.body + "\nsuggested: " + c.suggestion.focus + " — " + c.suggestion.rationale + "\nfiled: " + c.proposal.title + "\n" + c.note, "ok");
+  } catch (e) { say(e.message, "err"); }
+  refresh();
+});
+
+el("sealBtn").addEventListener("click", function(){
+  el("archive").value = ship.seal("flagship-" + Date.now());
+  say("sealed — fixity travels inside the envelope; verify it anywhere", "ok");
+});
+
+refresh();
+</script>
+</body>
+</html>

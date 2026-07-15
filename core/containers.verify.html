@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Containers</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .s-running{color:#34d399} .s-suspended{color:#fbbf24} .s-provisioned{color:#38bdf8} .s-decommissioned{color:#94a3b8}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Containers</b> (build 0050, Stage 6 · Infrastructure). Isolated, named environments with a lifecycle — a whole OceanicOS in a box; with Deployment (0049) and Sync (0046) this is "Cloud" in zero-runtime terms. Suite runs on the <b>Verification Engine</b> (0004). <b>Closes Stage 6 (Infrastructure).</b></div>
+<div id="suite"></div>
+
+<h2>Live proof — a small cloud</h2>
+<table id="cloud"><tr><th>Container</th><th>State</th><th>Records</th><th>Note</th></tr></table>
+<div id="cloudline" class="note"></div>
+<div class="note">Isolation is real — nothing a container records is visible anywhere else until Sync deliberately merges oceans. A decommissioned container hands its final ocean back; environments never vanish silently.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="automation.js"></script>
+<script src="versioning.js"></script>
+<script src="graph.js"></script>
+<script src="reason.js"></script>
+<script src="learn.js"></script>
+<script src="evaluate.js"></script>
+<script src="monitor.js"></script>
+<script src="cicd.js"></script>
+<script src="deploy.js"></script>
+<script src="sync.js"></script>
+<script src="containers.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+
+var suite = OceanicCore.createVerifier({ name: "Containers (build 0050)" });
+
+suite.test("factory boots and exposes the surface; provisioning is guarded", function(a){
+  a.equal(typeof OceanicCore.createContainers, "function");
+  var K = OceanicCore.createContainers();
+  ["provision","start","exec","suspend","decommission","storageOf","get","list","status"].forEach(function(fn){
+    a.equal(typeof K[fn], "function", "exposes " + fn);
+  });
+  a.throws(function(){ K.provision(""); }, "a container needs a name");
+  K.provision("alpha");
+  a.throws(function(){ K.provision("alpha"); }, "duplicate names refused");
+});
+
+suite.test("provision → start: an isolated kernel comes up empty and beating", function(a){
+  var K = OceanicCore.createContainers();
+  var p = K.provision("alpha");
+  a.equal(p.state, "provisioned");
+  var s = K.start("alpha");
+  a.equal(s.state, "running");
+  a.equal(s.records, 0, "a fresh environment is an empty ocean");
+  a.ok(s.pulse >= 1, "and it beats");
+});
+
+suite.test("exec runs real work against a RUNNING container", function(a){
+  var K = OceanicCore.createContainers();
+  K.provision("alpha"); K.start("alpha");
+  var oid = K.exec("alpha", function(os){
+    var o = os.reality.observe({ observation: "life inside the box", source: "alpha" });
+    os.reality.verify(o.meta.oid);
+    return o.meta.oid;
+  });
+  a.ok(oid, "work returned its result");
+  a.equal(K.exec("alpha", function(os){ return os.reality.observations(false).length; }), 1);
+  a.throws(function(){ K.exec("alpha", "not a function"); }, "exec needs a function");
+});
+
+suite.test("ISOLATION is real — containers see nothing of each other", function(a){
+  var K = OceanicCore.createContainers();
+  K.provision("alpha"); K.start("alpha");
+  K.provision("beta");  K.start("beta");
+  K.exec("alpha", function(os){ os.reality.observe({ observation: "alpha's secret", source: "alpha" }); });
+  a.equal(K.exec("beta", function(os){ return os.memory.status().count; }), 0, "beta's ocean is untouched");
+  a.equal(K.get("alpha").records, 1);
+});
+
+suite.test("suspend powers down without loss; start resumes with everything aboard", function(a){
+  var K = OceanicCore.createContainers();
+  K.provision("alpha"); K.start("alpha");
+  K.exec("alpha", function(os){
+    var o = os.reality.observe({ observation: "remember me", source: "alpha" });
+    os.reality.verify(o.meta.oid);
+  });
+  var sus = K.suspend("alpha");
+  a.equal(sus.state, "suspended");
+  a.equal(sus.records, 2, "observation + its verification amendment persisted");
+  a.throws(function(){ K.exec("alpha", function(){}); }, "no exec while suspended");
+  var res = K.start("alpha");
+  a.equal(res.records, 2, "resume rehydrated the whole ocean");
+  a.equal(K.exec("alpha", function(os){ return os.reality.observations(false)[0].body; }), "remember me");
+});
+
+suite.test("decommission is terminal — but the ocean is handed back, never destroyed", function(a){
+  var K = OceanicCore.createContainers();
+  K.provision("alpha"); K.start("alpha");
+  K.exec("alpha", function(os){ os.reality.observe({ observation: "final cargo", source: "alpha" }); });
+  a.throws(function(){ K.decommission("alpha"); }, "a reason is required");
+  var d = K.decommission("alpha", "migrating to a bigger box");
+  a.equal(d.state, "decommissioned");
+  a.equal(d.records, 1);
+  var rescued = JSON.parse(d.snapshot);
+  a.equal(rescued.records[0].body, "final cargo", "the final ocean came back intact");
+  a.throws(function(){ K.start("alpha"); }, "cannot start a decommissioned container");
+  a.throws(function(){ K.decommission("alpha", "again"); }, "cannot decommission twice");
+  a.equal(K.get("alpha").reason, "migrating to a bigger box", "the tombstone remembers why");
+});
+
+suite.test("lifecycle guards hold", function(a){
+  var K = OceanicCore.createContainers();
+  K.provision("alpha");
+  a.throws(function(){ K.suspend("alpha"); }, "only a running container suspends");
+  K.start("alpha");
+  a.throws(function(){ K.start("alpha"); }, "already running");
+  a.throws(function(){ K.start("ghost"); }, "unknown container");
+});
+
+suite.test("CLOUD STORY 1 — a release DEPLOYS into a container", function(a){
+  // the host shipyard
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "host" });
+  os.start();
+  var o = os.reality.observe({ observation: "cargo for the cloud", source: "host" });
+  os.reality.verify(o.meta.oid);
+  var M = OceanicCore.createMonitor({ oceanic: os, logger: OceanicCore.createLogger({ now: clock }) });
+  var R = OceanicCore.createCICD({ oceanic: os, monitor: M, verify: function(){ return true; } });
+  R.release({ notes: "cloud-bound" });
+  // the cloud
+  var K = OceanicCore.createContainers();
+  K.provision("node-1");
+  var D = OceanicCore.createDeployment({ oceanic: os, cicd: R });
+  D.addTarget("node-1", K.storageOf("node-1"));
+  var r = D.deploy("node-1");
+  a.equal(r.ok, true, "deployed into the container");
+  var s = K.start("node-1");
+  a.ok(s.records >= 3, "the container booted the delivered ocean (obs + amendment + release)");
+  a.equal(K.exec("node-1", function(env){ return env.memory.recall({ type: "release" }).length; }), 1,
+    "the release ledger is aboard the container");
+});
+
+suite.test("CLOUD STORY 2 — two containers diverge, Sync reunites them, zero loss", function(a){
+  var K = OceanicCore.createContainers();
+  K.provision("east"); K.start("east");
+  K.provision("west"); K.start("west");
+  K.exec("east", function(os){ os.reality.observe({ observation: "sunrise seen east", source: "east" }); });
+  K.exec("west", function(os){ os.reality.observe({ observation: "sunset seen west", source: "west" }); });
+  var S = OceanicCore.createSync();
+  var merged = K.exec("east", function(eastOs){
+    return K.exec("west", function(westOs){ return S.merge(eastOs.memory, westOs.memory); });
+  });
+  a.equal(merged.total, 2, "both facts in one ocean");
+  a.deepEqual(merged.conflicts, []);
+  var bodies = merged.records.map(function(r){ return r.body; }).sort();
+  a.deepEqual(bodies, ["sunrise seen east", "sunset seen west"], "nothing lost, nothing invented");
+});
+
+suite.test("the registry reports the whole fleet", function(a){
+  var K = OceanicCore.createContainers();
+  K.provision("a"); K.provision("b"); K.provision("c");
+  K.start("a"); K.start("b"); K.suspend("b");
+  K.start("c"); K.decommission("c", "done");
+  var s = K.status();
+  a.equal(s.containers, 3);
+  a.deepEqual(s.byState, { running: 1, suspended: 1, decommissioned: 1 });
+  a.deepEqual(K.list().map(function(c){ return c.name; }), ["a","b","c"], "sorted, complete");
+});
+
+suite.test("lifecycle leaves evidence in the operational log", function(a){
+  var log = OceanicCore.createLogger({ now: clock });
+  var K = OceanicCore.createContainers({ logger: log });
+  var before = log.status().counts.info;
+  K.provision("alpha"); K.start("alpha"); K.suspend("alpha");
+  a.ok(log.status().counts.info >= before + 3, "provision, start and suspend each logged");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Containers";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var K = OceanicCore.createContainers();
+  K.provision("node-1"); K.start("node-1");
+  K.exec("node-1", function(os){ var o = os.reality.observe({ observation: "serving the north fleet", source: "node-1" }); os.reality.verify(o.meta.oid); });
+  K.provision("node-2"); K.start("node-2");
+  K.exec("node-2", function(os){ os.reality.observe({ observation: "standing by as failover", source: "node-2" }); });
+  K.suspend("node-2");
+  K.provision("node-3"); K.start("node-3");
+  K.decommission("node-3", "hardware reclaimed");
+  var table = document.getElementById("cloud");
+  K.list().forEach(function(c){
+    var row = table.insertRow();
+    row.insertCell().textContent = c.name;
+    var s = row.insertCell(); s.textContent = c.state.toUpperCase(); s.className = "s-" + c.state;
+    row.insertCell().textContent = c.records;
+    row.insertCell().textContent = c.reason || (c.state === "suspended" ? "ocean persisted, kernel powered down" : c.state === "running" ? "alive and beating" : "—");
+  });
+  var st = K.status();
+  document.getElementById("cloudline").textContent =
+    st.containers + " containers — " + JSON.stringify(st.byState) + " · every ocean isolated, every lifecycle step accounted for.";
+})();
+</script>
+</body>
+</html>

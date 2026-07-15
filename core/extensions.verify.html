@@ -11,13 +11,17 @@
   .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
   .verdict{margin-top:16px;font-size:15px;font-weight:bold}
   .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .ok{color:#34d399} .no{color:#fb7185} code{color:#38bdf8}
 </style>
 </head>
 <body>
 <h1>Ω∞ OceanicOS :: Core Verification</h1>
-<div class="sub">Capability under test: <b>Extensions</b> (build 0027, Stage 3 · Applications — the stage's last capability). An extension host: code the system did not ship with, contained, contributory, reversible — and bound by the Charter through the API. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div class="sub">Capability under test: <b>Extensions</b> (build 0022, Stage 3 · Applications). A plugin system — new capabilities register into the running system. Suite runs on the <b>Verification Engine</b> (0004).</div>
 <div id="suite"></div>
-<div class="note">The Extensions manager itself is <a href="extensions.html" style="color:#38bdf8">extensions.html</a> — this page verifies its logic.</div>
+
+<h2>Live proof — two plugins installed, then invoked</h2>
+<table id="demo"><tr><th>Command</th><th>Args</th><th>Result</th></tr></table>
+<div class="note">The <code>surveyor</code> plugin was handed nothing but a context; its <code>survey</code> command observes AND verifies a fact through the API alone — a new capability, plugged in, bound by the same rules as everything else.</div>
 
 <script src="verify-engine.js"></script>
 <script src="heartbeat.js"></script>
@@ -30,168 +34,132 @@
 <script src="oceanic.js"></script>
 <script src="api.js"></script>
 <script src="logger.js"></script>
-<script src="versioning.js"></script>
 <script src="extensions.js"></script>
 <script>
 "use strict";
 var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
-function newHost(){ return OceanicCore.createExtensions({ oceanic: OceanicCore.createOceanic({ now: clock, manual: true, name: "ext-test" }), now: clock }); }
-function ext(id, cmds){ return { id: id, name: "Ext " + id, version: "1.0.0", activate: function(){ return { commands: cmds || {} }; } }; }
+function newExt(){ var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "ext-test" }); os.start(); return OceanicCore.createExtensions({ oceanic: os }); }
+var EX = OceanicCore.createExtensions.examples;
 
-var suite = OceanicCore.createVerifier({ name: "Extensions (build 0027)" });
+var suite = OceanicCore.createVerifier({ name: "Extensions (build 0022)" });
 
-suite.test("createExtensions requires an assembled system and its dependencies", function(a){
+suite.test("factory requires a system; ships example extensions", function(a){
   a.equal(typeof OceanicCore.createExtensions, "function");
-  a.throws(function(){ OceanicCore.createExtensions(); }, "no oceanic");
-  a.throws(function(){ OceanicCore.createExtensions({ oceanic: OceanicCore.createOceanic({ manual:true }), deps: {} }); }, "empty deps");
-  var h = newHost();
-  ["boot","register","activate","deactivate","invoke","commands","list","status"].forEach(function(fn){
-    a.equal(typeof h[fn], "function", "exposes " + fn);
-  });
+  a.throws(function(){ OceanicCore.createExtensions(); });
+  a.ok(EX.greeter && EX.surveyor, "example extensions present");
+  var X = newExt();
+  ["use","command","remove","has","list","commands","status"].forEach(function(fn){ a.equal(typeof X[fn], "function", "exposes " + fn); });
 });
 
-suite.test("a fresh host is quiet; boot() boots once and is idempotent", function(a){
-  var h = newHost();
-  a.equal(h.status().booted, false);
-  a.deepEqual(h.list(), []);
-  h.boot();
-  a.equal(h.status().booted, true);
-  h.boot();
-  a.equal(h.oceanic.status().pulse, 1, "one pulse only");
+suite.test("use() installs a plugin and namespaces its commands", function(a){
+  var X = newExt();
+  var r = X.use(EX.greeter);
+  a.deepEqual(r.commands, ["greeter.hello"], "command namespaced by extension");
+  a.equal(X.has("greeter"), true);
+  a.deepEqual(X.commands(), ["greeter.hello"]);
 });
 
-suite.test("register() validates the manifest — and refuses without throwing", function(a){
-  var h = newHost(); h.boot();
-  a.equal(h.register().ok, false, "empty manifest");
-  a.equal(h.register({ name:"x", version:"1.0.0", activate:function(){} }).ok, false, "missing id");
-  a.equal(h.register({ id:"x", version:"1.0.0", activate:function(){} }).ok, false, "missing name");
-  a.equal(h.register({ id:"x", name:"x", version:"1.0.0" }).ok, false, "missing activate");
-  var bad = h.register({ id:"x", name:"x", version:"one point oh", activate:function(){} });
-  a.equal(bad.ok, false); a.ok(bad.error.indexOf("SemVer") >= 0, "invalid version named in the error");
-  a.equal(h.register(ext("x")).ok, true, "a valid manifest registers");
-  var dup = h.register(ext("x"));
-  a.equal(dup.ok, false); a.ok(dup.error.indexOf("already registered") >= 0);
-  a.equal(h.list().length, 1);
-  a.equal(h.list()[0].state, "registered", "registered, not yet active");
-});
-
-suite.test("activate() runs the extension with a context and collects its commands", function(a){
-  var h = newHost(); h.boot();
-  var got = null;
-  h.register({ id:"probe", name:"Probe", version:"2.1.0", activate:function(ctx){ got = ctx; return { commands: { ping: function(){ return "pong"; } } }; } });
-  var r = h.activate("probe");
+suite.test("command() invokes a provided handler and returns { ok, data, error }", function(a){
+  var X = newExt(); X.use(EX.greeter);
+  var r = X.command("greeter.hello", { who: "Kai" });
   a.equal(r.ok, true);
-  a.equal(r.extension.state, "active");
-  a.deepEqual(r.extension.commands, ["ping"]);
-  a.ok(got && typeof got.api === "object" && typeof got.log === "function", "the context carries the API and a log");
-  a.equal(h.activate("probe").ok, true, "re-activating an active extension is a no-op");
+  a.equal(r.data, "Take a Drop, Kai.");
+  a.equal(X.command("greeter.hello").data, "Take a Drop, harbor.", "defaults work");
 });
 
-suite.test("the context is the WHOLE surface — no engines, no memory, no kernel reach through it", function(a){
-  var h = newHost(); h.boot();
-  var got = null;
-  h.register({ id:"probe", name:"Probe", version:"1.0.0", activate:function(ctx){ got = ctx; return {}; } });
-  h.activate("probe");
-  a.deepEqual(Object.keys(got).sort(), ["api","log"], "context exposes exactly api + log");
-  a.equal(got.oceanic, undefined);
-  a.equal(got.memory, undefined);
-  a.equal(typeof got.api.call, "function", "the API is the one door");
+suite.test("command() NEVER throws — unknown command and handler errors are reported", function(a){
+  var X = newExt(); X.use(EX.surveyor);
+  a.equal(X.command("does.not.exist").ok, false);
+  var bad = X.command("surveyor.survey", {}); // handler throws (no fact)
+  a.equal(bad.ok, false);
+  a.ok(bad.error.indexOf("requires { fact }") >= 0);
 });
 
-suite.test("an extension that throws on activate is FAILED and contained — the host never throws", function(a){
-  var h = newHost(); h.boot();
-  h.register(ext("good", { hello: function(){ return "hi"; } }));
-  h.register({ id:"bomb", name:"Bomb", version:"1.0.0", activate:function(){ throw new Error("boom at activation"); } });
-  h.activate("good");
-  var r = h.activate("bomb");
-  a.equal(r.ok, false);
-  a.ok(r.error.indexOf("boom") >= 0);
-  var shaped = h.list().filter(function(e){ return e.id === "bomb"; })[0];
-  a.equal(shaped.state, "failed");
-  a.ok(shaped.error.indexOf("boom") >= 0, "the failure is recorded openly");
-  a.equal(h.invoke("good","hello").data, "hi", "other extensions are untouched");
+suite.test("a plugin can add a real capability driven only through the API", function(a){
+  var X = newExt(); X.use(EX.surveyor);
+  var r = X.command("surveyor.survey", { fact: "the north bar shifts after storms", note: "measured twice" });
+  a.equal(r.ok, true);
+  a.equal(r.data.status, "verified", "survey observed AND verified");
+  // and the effect is real in the system
+  a.equal(X.command("greeter.hello").ok, false, "greeter not installed here");
 });
 
-suite.test("the palette aggregates ACTIVE extensions only; invoke() reports and never throws", function(a){
-  var h = newHost(); h.boot();
-  h.register(ext("a", { one: function(){ return 1; } }));
-  h.register(ext("b", { two: function(){ return 2; }, boom: function(){ throw new Error("command exploded"); } }));
-  h.activate("a"); h.activate("b");
-  a.deepEqual(h.commands().map(function(c){ return c.extension+"."+c.command; }), ["a.one","b.two","b.boom"]);
-  a.equal(h.invoke("a","one").data, 1);
-  var bad = h.invoke("b","boom");
-  a.equal(bad.ok, false); a.ok(bad.error.indexOf("exploded") >= 0, "a throwing command is caught");
-  a.equal(h.invoke("nope","x").ok, false, "unknown extension reported");
-  var miss = h.invoke("a","nope");
-  a.equal(miss.ok, false, "unknown command reported");
-  a.ok(miss.error.indexOf("no command") >= 0, "the missing command is named");
+suite.test("duplicate extension names and bad shapes are refused", function(a){
+  var X = newExt(); X.use(EX.greeter);
+  a.throws(function(){ X.use(EX.greeter); }, "already installed");
+  a.throws(function(){ X.use("nope"); }, "not an object");
+  a.throws(function(){ X.use({ setup: function(){} }); }, "no name");
+  a.throws(function(){ X.use({ name: "a.b", setup: function(){} }); }, "dotted name");
+  a.throws(function(){ X.use({ name: "z" }); }, "no setup");
 });
 
-suite.test("deactivate() withdraws the contributions; reactivation restores them", function(a){
-  var h = newHost(); h.boot();
-  h.register(ext("a", { one: function(){ return 1; } }));
-  h.activate("a");
-  a.equal(h.commands().length, 1);
-  a.equal(h.deactivate("a").ok, true);
-  a.equal(h.commands().length, 0, "the palette forgot the commands");
-  a.equal(h.invoke("a","one").ok, false, "an inactive extension cannot be invoked");
-  a.equal(h.deactivate("a").ok, false, "deactivating twice is refused");
-  a.equal(h.deactivate("ghost").ok, false, "unknown id refused");
-  a.equal(h.activate("a").ok, true);
-  a.equal(h.invoke("a","one").data, 1, "reactivation restores the commands");
+suite.test("a command collision between plugins is prevented", function(a){
+  var X = newExt(); X.use(EX.greeter);
+  a.throws(function(){ X.use({ name: "greeter2", setup: function(c){ c.provide("hi", function(){}); c.provide("hi", function(){}); } }); }, "same command twice");
 });
 
-suite.test("the Charter binds an extension: it cannot commit on unverified reality", function(a){
-  var h = newHost(); h.boot();
-  var caught = null;
-  h.register({ id:"pushy", name:"Pushy", version:"1.0.0", activate:function(ctx){
-    return { commands: {
-      grab: function(){ return ctx.api.call("reality.observe", { observation: "unchecked rumor", source: "ext:pushy" }); },
-      commit: function(p){ return ctx.api.call("decision.decide", { id: p.did, choice: p.choice }); },
-      propose: function(p){ return ctx.api.call("decision.propose", p); },
-      bless: function(p){ return ctx.api.call("reality.verify", { id: p.id }); }
-    } };
-  } });
-  h.activate("pushy");
-  var oid = h.invoke("pushy","grab").data.data.id;
-  var did = h.invoke("pushy","propose", { question:"act?", options:["a","b"], grounds:[oid] }).data.data.id;
-  var refused = h.invoke("pushy","commit", { did: did, choice: "a" }).data;
-  a.equal(refused.ok, false, "the API refused the extension");
-  a.ok(refused.error.indexOf("not verified") >= 0);
-  h.invoke("pushy","bless", { id: oid });
-  a.equal(h.invoke("pushy","commit", { did: did, choice: "a" }).data.ok, true, "permitted once reality is verified");
+suite.test("a plugin whose setup throws is rolled back — no half-installs", function(a){
+  var X = newExt();
+  a.throws(function(){ X.use({ name: "broken", setup: function(c){ c.provide("x", function(){}); throw new Error("boom"); } }); });
+  a.equal(X.has("broken"), false, "not installed");
+  a.equal(X.command("broken.x").ok, false, "its command was withdrawn");
+  a.deepEqual(X.commands(), [], "registry is clean");
 });
 
-suite.test("the shipped sample (tide-watch) registers, activates, and reports the real pending queue", function(a){
-  var h = newHost(); h.boot();
-  a.equal(h.register(OceanicCore.createExtensions.samples.tideWatch).ok, true);
-  a.equal(h.activate("tide-watch").ok, true);
-  a.equal(h.invoke("tide-watch","pending").data.pending, 0, "clear water at first");
-  var mark = h.invoke("tide-watch","mark", { text: "spring tide at dusk" });
-  a.equal(mark.ok, true);
-  var p = h.invoke("tide-watch","pending").data;
-  a.equal(p.pending, 1, "the sample sees its own drop");
-  a.equal(p.ids[0], mark.data.id);
-  a.equal(h.oceanic.status().memory.count >= 1, true, "and the drop is truly in the ocean");
+suite.test("remove() withdraws a plugin and all its commands", function(a){
+  var X = newExt(); X.use(EX.greeter); X.use(EX.surveyor);
+  a.equal(X.status().extensions, 2);
+  a.equal(X.remove("greeter"), true);
+  a.equal(X.has("greeter"), false);
+  a.equal(X.command("greeter.hello").ok, false, "its command is gone");
+  a.equal(X.command("surveyor.survey", { fact: "still here" }).ok, true, "other plugin unaffected");
+  a.throws(function(){ X.remove("ghost"); }, "removing an unknown plugin");
 });
 
-suite.test("list() returns copies; status() is consistent", function(a){
-  var h = newHost(); h.boot();
-  h.register(ext("a", { one: function(){ return 1; } }));
-  h.activate("a");
-  var l = h.list(); l.push({ forged: true }); l[0].state = "hacked";
-  a.equal(h.list().length, 1, "the forgery bounced");
-  a.equal(h.list()[0].state, "active", "the mutation bounced");
-  var s = h.status();
-  a.equal(s.registered, 1);
-  a.equal(s.active, 1);
-  a.equal(s.commands, 1);
+suite.test("list() and status() report installed plugins and total commands", function(a){
+  var X = newExt(); X.use(EX.greeter); X.use(EX.surveyor);
+  var names = X.list().map(function(e){ return e.name; }).sort();
+  a.deepEqual(names, ["greeter","surveyor"]);
+  a.equal(X.list()[0].version, "1.0.0", "version surfaced");
+  a.deepEqual(X.status(), { extensions: 2, commands: 2 });
+});
+
+suite.test("with a Logger, installs are recorded", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  var log = OceanicCore.createLogger({ now: clock });
+  var lines = [];
+  log.onLog(function(e){ lines.push(e.message); });
+  var X = OceanicCore.createExtensions({ oceanic: os, logger: log });
+  X.use(EX.greeter);
+  a.ok(lines.some(function(m){ return m.indexOf("installed extension 'greeter'") >= 0; }));
+  a.throws(function(){ OceanicCore.createExtensions({ oceanic: os, logger: {} }); }, "bad logger refused");
 });
 
 /* ---- render the suite THROUGH the Verification Engine ---- */
 var record = suite.renderTo(document.getElementById("suite"));
 document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Extensions";
 try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: install two plugins and invoke them ---- */
+(function(){
+  var X = newExt();
+  X.use(EX.greeter); X.use(EX.surveyor);
+  var calls = [
+    ["greeter.hello", { who: "navigator" }],
+    ["surveyor.survey", { fact: "the harbor mouth silts each spring", note: "dredged annually" }],
+    ["surveyor.survey", {}]
+  ];
+  var table = document.getElementById("demo");
+  calls.forEach(function(c){
+    var r = X.command(c[0], c[1]);
+    var row = table.insertRow();
+    row.insertCell().textContent = c[0];
+    row.insertCell().textContent = JSON.stringify(c[1]);
+    var cell = row.insertCell();
+    cell.textContent = r.ok ? ("✓ " + (typeof r.data === "string" ? r.data : JSON.stringify(r.data))) : ("✗ " + r.error);
+    cell.className = r.ok ? "ok" : "no";
+  });
+})();
 </script>
 </body>
 </html>

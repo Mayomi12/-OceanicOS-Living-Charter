@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Provenance</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  pre{background:#062033;border:1px solid #12455f;padding:12px;font-size:12px;white-space:pre-wrap;margin-top:12px}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Provenance</b> (build 0075, Stage 8 · Stewardship). A pure lineage lens over the append-only Memory Ocean (0005) — for any record it reconstructs what it corrected, what corrected it, and whether it is still current. Writes nothing. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — a correction told as a lineage</h2>
+<pre id="live"></pre>
+<div class="note">History is never erased: the superseded record still stands, and Provenance can still tell its whole story. The lens invents nothing — every link is a supersedes edge already in the ocean.</div>
+
+<script src="verify-engine.js"></script>
+<script src="memory.js"></script>
+<script src="provenance.js"></script>
+<script>
+"use strict";
+var M = OceanicCore.createMemory;
+var P = OceanicCore.createProvenance;
+
+// a memory with deterministic ids, so lineages are exact to assert against
+function freshMemory(){
+  var n = 0;
+  return M({ idgen: function(){ n += 1; return "r" + n; }, now: function(){ return 1000 + n; } });
+}
+function ids(list){ return list.map(function(r){ return r.id; }); }
+
+var suite = OceanicCore.createVerifier({ name: "Provenance (build 0075)" });
+
+suite.test("factory needs a Memory with get() and timeline()", function(a){
+  a.equal(typeof P, "function");
+  a.throws(function(){ P(); }, "no memory refused");
+  a.throws(function(){ P({ memory: {} }); }, "an object without get/timeline refused");
+  var p = P({ memory: freshMemory() });
+  ["trail","chain","currentOf","originOf","isCurrent","explain","report"].forEach(function(fn){
+    a.equal(typeof p[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("a first-of-its-kind record: length 1, current, its own origin", function(a){
+  var m = freshMemory(); var p = P({ memory: m });
+  var A = m.remember({ body: "the tide turned at six", type: "observation" });   // r1
+  var t = p.trail(A.id);
+  a.equal(t.exists, true);
+  a.equal(t.length, 1);
+  a.equal(t.current, true, "nothing supersedes it");
+  a.equal(t.position, 0, "it is the origin");
+  a.equal(t.currentId, A.id);
+  a.equal(t.originId, A.id);
+  a.deepEqual(t.ancestry, [], "it corrected nothing");
+  a.deepEqual(t.descendants, [], "nothing corrected it");
+  a.equal(p.isCurrent(A.id), true);
+});
+
+suite.test("one correction: the old record still stands, and both know the whole lineage", function(a){
+  var m = freshMemory(); var p = P({ memory: m });
+  var A = m.remember({ body: "tide turns near five", type: "knowledge" });        // r1
+  var B = m.amend(A.id, { body: "tide turns near six", type: "knowledge" });      // r2 supersedes r1
+  a.equal(m.get(A.id).body, "tide turns near five", "the superseded record is NOT erased");
+
+  var tA = p.trail(A.id);
+  a.equal(tA.current, false, "A is no longer current");
+  a.equal(tA.currentId, B.id, "A knows its current successor");
+  a.equal(tA.originId, A.id);
+  a.deepEqual(ids(tA.descendants), [B.id], "A was corrected by B");
+  a.deepEqual(ids(tA.chain), [A.id, B.id], "chain is origin → current");
+
+  var tB = p.trail(B.id);
+  a.equal(tB.current, true, "B is current");
+  a.equal(tB.position, 1, "B is the first correction");
+  a.equal(tB.originId, A.id, "B knows where the story began");
+  a.deepEqual(ids(tB.ancestry), [A.id], "B corrected A");
+  a.deepEqual(ids(tB.chain), [A.id, B.id]);
+
+  a.equal(p.currentOf(A.id).id, B.id, "currentOf follows the chain to the tip");
+  a.equal(p.originOf(B.id).id, A.id, "originOf walks back to the head");
+  a.equal(p.isCurrent(A.id), false);
+  a.equal(p.isCurrent(B.id), true);
+});
+
+suite.test("a three-step chain reconstructs identically from ANY point in it", function(a){
+  var m = freshMemory(); var p = P({ memory: m });
+  var A = m.remember({ body: "v1", type: "knowledge" });   // r1
+  var B = m.amend(A.id, { body: "v2" });                    // r2
+  var C = m.amend(B.id, { body: "v3" });                    // r3
+  var expected = [A.id, B.id, C.id];
+  a.deepEqual(ids(p.chain(A.id)), expected, "from the origin");
+  a.deepEqual(ids(p.chain(B.id)), expected, "from the middle");
+  a.deepEqual(ids(p.chain(C.id)), expected, "from the tip");
+  a.equal(p.trail(B.id).position, 1, "the middle knows its place");
+  a.equal(p.currentOf(A.id).id, C.id);
+  a.equal(p.originOf(C.id).id, A.id);
+  a.equal(p.isCurrent(C.id), true);
+});
+
+suite.test("independent lineages never bleed into each other", function(a){
+  var m = freshMemory(); var p = P({ memory: m });
+  var A = m.remember({ body: "lineage one v1" });     // r1
+  var X = m.remember({ body: "lineage two, alone" }); // r2
+  var B = m.amend(A.id, { body: "lineage one v2" });  // r3
+  a.deepEqual(ids(p.chain(A.id)), [A.id, B.id], "chain of one does not include the other");
+  a.deepEqual(ids(p.chain(X.id)), [X.id], "the lone record is its own whole lineage");
+  a.equal(p.isCurrent(X.id), true);
+});
+
+suite.test("an unknown id is reported as absent, not invented", function(a){
+  var p = P({ memory: freshMemory() });
+  var t = p.trail("nope");
+  a.equal(t.exists, false);
+  a.deepEqual(t.chain, []);
+  a.equal(t.currentId, null);
+  a.equal(p.currentOf("nope"), null);
+  a.equal(p.isCurrent("nope"), false);
+  a.ok(p.explain("nope").indexOf("No record") === 0, "explain says so plainly");
+});
+
+suite.test("a broken supersedes edge is reported honestly, not hidden", function(a){
+  // a stub ocean whose record cites an ancestor that isn't present (as a bad snapshot might)
+  var kept = { id: "child", type: "knowledge", body: "cites a missing parent", supersedes: "ghost" };
+  var stub = { get: function(id){ return id === "child" ? kept : null; },
+               timeline: function(){ return [kept]; } };
+  var p = P({ memory: stub });
+  var t = p.trail("child");
+  a.equal(t.exists, true);
+  a.equal(t.broken, true, "the missing ancestor is flagged");
+  a.deepEqual(t.ancestry, [], "the chain stops where it can no longer resolve");
+  a.ok(p.explain("child").indexOf("NOTE:") >= 0, "explain surfaces the broken link");
+});
+
+suite.test("report() summarizes the whole ocean's history", function(a){
+  var m = freshMemory(); var p = P({ memory: m });
+  var A = m.remember({ body: "a1" });          // r1  lineage 1
+  m.amend(A.id, { body: "a2" });               // r2
+  m.remember({ body: "b, alone" });            // r3  lineage 2
+  var C = m.remember({ body: "c1" });          // r4  lineage 3
+  var C2 = m.amend(C.id, { body: "c2" });      // r5
+  m.amend(C2.id, { body: "c3" });              // r6
+  var rep = p.report();
+  a.equal(rep.records, 6, "every record counted, superseded included");
+  a.equal(rep.lineages, 3, "three distinct stories");
+  a.equal(rep.corrections, 3, "three supersession steps");
+  a.equal(rep.longest, 3, "the longest lineage is three deep");
+  // report agrees with Memory's own tally
+  a.equal(rep.lineages, m.status().current, "lineages == current records");
+  a.equal(rep.corrections, m.status().superseded, "corrections == superseded records");
+});
+
+suite.test("Provenance is a PURE READER — reading never changes the ocean", function(a){
+  var m = freshMemory(); var p = P({ memory: m });
+  var A = m.remember({ body: "v1" }); m.amend(A.id, { body: "v2" });
+  var before = m.timeline().length;
+  p.trail(A.id); p.chain(A.id); p.explain(A.id); p.report(); p.currentOf(A.id);
+  a.equal(m.timeline().length, before, "the record count did not move");
+});
+
+suite.test("explain() tells the lineage in words", function(a){
+  var m = freshMemory(); var p = P({ memory: m });
+  var A = m.remember({ body: "tide turns near five", type: "knowledge" });
+  var B = m.amend(A.id, { body: "tide turns near six", type: "knowledge" });
+  var eA = p.explain(A.id), eB = p.explain(B.id);
+  a.ok(eA.indexOf("superseded by " + B.id) >= 0, "A's telling names its successor");
+  a.ok(eB.indexOf("current version") >= 0, "B's telling says it is current");
+  a.ok(eB.indexOf(A.id + " → " + B.id) >= 0, "the lineage is drawn origin → current");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Provenance";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var n = 0;
+  var m = OceanicCore.createMemory({ idgen: function(){ n += 1; return "obs-" + n; } });
+  var p = OceanicCore.createProvenance({ memory: m });
+  var a = m.remember({ body: "the reef is safe to cross at any tide", type: "knowledge", source: "first survey" });
+  var b = m.amend(a.id, { body: "the reef is safe to cross only above half tide", type: "knowledge", source: "second survey" });
+  m.amend(b.id, { body: "the reef is safe to cross only above two-thirds tide", type: "knowledge", source: "third survey" });
+  document.getElementById("live").textContent = p.explain(a.id) + "\n\n— and the origin still reads: \"" + m.get(a.id).body + "\"";
+})();
+</script>
+</body>
+</html>

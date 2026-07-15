@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ω∞ OceanicOS — the Gate</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:34px;max-width:880px;margin:auto}
+  h1{font-size:24px;margin-bottom:4px} h2{font-size:15px;color:#8fb3c4;margin-top:30px;border-bottom:1px solid #12455f;padding-bottom:6px}
+  .motto{color:#8fb3c4;font-style:italic}
+  ul{list-style:none;padding:0} li{margin:8px 0}
+  a{color:#38bdf8;text-decoration:none} a:hover{text-decoration:underline}
+  .desc{color:#8fb3c4;font-size:13px;margin-left:8px}
+  .green{display:inline-block;margin-top:6px;padding:10px 14px;border:1px solid #12455f;background:#062033}
+  .law{margin-top:34px;padding:14px;border:1px solid #12455f;color:#34d399;text-align:center;font-size:13px}
+  #selfcheck{margin-top:26px;font-size:12px;color:#8fb3c4}
+  #selfcheck .ok{color:#34d399;font-weight:bold} #selfcheck .bad{color:#fb7185;font-weight:bold}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS</h1>
+<p class="motto">Take a Drop. Leave a Drop. Return a Better Drop. — 57 verified capabilities · nine stages · zero runtime: everything below opens in this browser, right now.</p>
+
+<h2>The single green light</h2>
+<p class="green"><a id="light" href="core/verify-all.html">Continuous Verification — run every capability's suite and get one verdict</a></p>
+
+<h2>Applications</h2>
+<ul id="apps">
+  <li><a href="core/harbor.html">Harbor</a><span class="desc">the web dashboard over the one Memory Ocean</span></li>
+  <li><a href="core/terminal.html">Terminal</a><span class="desc">the REPL — history, tab-completion, the whole CLI</span></li>
+  <li><a href="core/desktop.html">Desktop</a><span class="desc">a windowed workspace compositing the apps</span></li>
+  <li><a href="core/mobile.html">Mobile</a><span class="desc">offline-capable, persists the ocean on-device</span></li>
+  <li><a href="core/docs.html">Documentation</a><span class="desc">the API manifest, rendered by the system itself</span></li>
+  <li><a href="core/studio.html">Tokenization Studio</a><span class="desc">a living BPE workbench, rooted in Karpathy's minbpe</span></li>
+  <li><a href="core/chronicle.html">Chronicle</a><span class="desc">the history explorer — a record's lineage, and the ocean's past states recovered by dragging through time</span></li>
+  <li><a href="core/omega.html">Ω∞v — the Flagship</a><span class="desc">the FULL STACK in one page: helm, gated commands, instruments, governance, the improvement loop, sealing — persists on your device</span></li>
+</ul>
+
+<h2>The documents</h2>
+<ul id="docs">
+  <li><a href="Ω∞%20OceanicOS%20Living%20Charter.md">The Living Charter</a><span class="desc">the ratified law — Seven Articles, v1.0.0; humans hold final authority</span></li>
+  <li><a href="AGNOSTIC_CHARTER.md">The Living Agnostic Charter</a><span class="desc">Ω∞v — the platform-agnostic ecosystem vision</span></li>
+  <li><a href="SPECIFICATION.md">The Specification</a><span class="desc">the standard behind "OceanicOS Compatible", with an executable checker</span></li>
+  <li><a href="VISION.md">The Vision</a><span class="desc">the Maximum Foundation, mapped to what is built</span></li>
+  <li><a href="BUILD_LOG.md">The Ledger</a><span class="desc">every build 0001 onward — its verification, its release</span></li>
+  <li><a href="BUILDER.md">The Roadmap</a><span class="desc">nine stages, all complete — and still open water ahead</span></li>
+</ul>
+
+<div class="law">Never build everything. Always build the next verified capability that leaves reality better than before. Continue. ∞</div>
+
+<div id="selfcheck">self-check running…</div>
+<div id="suite" hidden></div>
+
+<script src="core/verify-engine.js"></script>
+<script src="core/accessibility.js"></script>
+<script>
+"use strict";
+/* The Gate verifies ITSELF on every load — build 0065's suite, dogfooding
+   Accessibility (0060). It reports on the uniform beacon, so Continuous
+   Verification (0013) drives this front page like any other capability. */
+var suite = OceanicCore.createVerifier({ name: "Ω∞ Gate (build 0065)" });
+
+suite.test("the gate itself audits ACCESSIBLE (build 0060, dogfooded)", function(a){
+  var rep = OceanicCore.createAccessibility().audit(document);
+  a.deepEqual(rep.findings.map(function(f){ return f.id; }), [], "no findings on the front page");
+  a.equal(rep.posture, "accessible");
+});
+
+suite.test("the single green light is on the gate", function(a){
+  var light = document.getElementById("light");
+  a.ok(light, "the link exists");
+  a.ok(/verify-all\.html$/.test(light.getAttribute("href")), "and it points at Continuous Verification");
+});
+
+suite.test("every application has a door", function(a){
+  var hrefs = [].map.call(document.querySelectorAll("#apps a"), function(el){ return el.getAttribute("href"); });
+  ["harbor","terminal","desktop","mobile","docs","studio","omega","chronicle"].forEach(function(app){
+    a.ok(hrefs.some(function(h){ return h.indexOf(app + ".html") >= 0; }), app + " is reachable");
+  });
+});
+
+suite.test("every founding document has a door", function(a){
+  var hrefs = [].map.call(document.querySelectorAll("#docs a"), function(el){ return el.getAttribute("href"); });
+  a.equal(hrefs.length, 6);
+  hrefs.forEach(function(h){ a.ok(/\.md$/.test(h), h + " points at a real document"); });
+  a.ok(hrefs.some(function(h){ return h.indexOf("Living%20Charter") >= 0; }), "the ratified Charter first among them");
+});
+
+suite.test("no dead doors — every link on the page has a real destination", function(a){
+  [].forEach.call(document.querySelectorAll("a"), function(el){
+    var href = el.getAttribute("href") || "";
+    a.ok(href.length > 1 && href !== "#", "'" + (el.textContent || "").trim().slice(0, 30) + "' leads somewhere");
+  });
+});
+
+var record = suite.renderTo(document.getElementById("suite"));
+document.getElementById("selfcheck").innerHTML = record.verdict === "PASS"
+  ? 'self-check: <span class="ok">✓ ' + record.passed + "/" + record.total + " — this page verified itself, like everything here</span>"
+  : 'self-check: <span class="bad">✗ ' + record.failed + " failing — the gate is out of order</span>";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>

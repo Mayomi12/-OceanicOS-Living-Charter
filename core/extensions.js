@@ -1,31 +1,22 @@
 /*
  * Ω∞ OceanicOS :: Extensions
- * Build 0027 · Stage 3 (Applications) · zero-runtime (plain browser or any JS engine)
+ * Build 0022 · Stage 3 (Applications) · zero-runtime (plain browser or any JS engine)
  *
- * The last Application of Stage 3: the system opens to code it did not ship
- * with — SAFELY. createExtensions() is an extension host. An extension is a
- * plain manifest { id, name, version, activate(context) }; activation hands it
- * a CONTEXT, not the system: the context exposes only the API (0017) and a
- * namespaced log. The engines, the memory, the kernel are not reachable
- * through it — so the Charter binds an extension exactly as it binds a human,
- * the CLI, the agent: it cannot commit on unverified reality.
+ * The system learns new tricks without being rebuilt. An Extension is a small
+ * plugin that, on install, is handed a controlled context — the running system,
+ * the API, a log, and a provide() to register commands — and contributes named
+ * commands the rest of the system (or an Agent, or the CLI) can then invoke.
  *
- * Host guarantees, regardless of what an extension does:
- *   - validated    → register() refuses a manifest without id/name/activate,
- *                    with an invalid SemVer, or with a duplicate id.
- *   - contained    → an extension that throws on activate is marked FAILED
- *                    with its error recorded; the host never throws and other
- *                    extensions are untouched.
- *   - contributory → an active extension may contribute commands; the host
- *                    aggregates them into one palette; invoke() runs one and
- *                    reports { ok, data | error } — a throwing command is
- *                    caught like a failing shell command.
- *   - reversible   → deactivate() withdraws the contributions; reactivation
- *                    is allowed. States: registered → active | failed,
- *                    active ⇄ inactive.
+ * The registry keeps extensions honest and separable:
+ *  - Commands are NAMESPACED by extension ("<ext>.<command>"), so two plugins
+ *    can never silently clash.
+ *  - install validates the plugin and is refused if the name is already taken.
+ *  - command() dispatch NEVER throws — a plugin's error is caught and reported.
+ *  - remove() cleanly withdraws an extension and all the commands it added.
  *
- * Ships with a sample, createExtensions.samples.tideWatch, the way the Agent
- * (0021) ships policies. extensions.html is the manager screen.
+ * An extension is just: { name, version?, setup(ctx), teardown?(ctx) }.
+ *   ctx = { oceanic, api, log(msg), provide(localName, handler) }
+ *   a command handler is handler(args) → any value.
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory(root);
@@ -33,158 +24,118 @@
 })(typeof self !== "undefined" ? self : this, function (root) {
   "use strict";
 
-  var VERSION = "0.27.0";
-
   function createExtensions(options) {
     options = options || {};
-    var os = options.oceanic;
-    if (!os || typeof os.start !== "function" || !os.status) {
+    var oceanic = options.oceanic;
+    if (!oceanic || typeof oceanic.status !== "function") {
       throw new TypeError("createExtensions requires an assembled OceanicOS: createExtensions({ oceanic })");
     }
     var D = options.deps || (root && root.OceanicCore) || {};
-    function need(fn, what) { if (typeof fn !== "function") throw new Error("createExtensions: " + what + " factory is unavailable — load the Core scripts or pass { deps }"); return fn; }
+    var api = options.api || (typeof D.createAPI === "function" ? D.createAPI({ oceanic: oceanic }) : null);
+    var logger = options.logger || null;
+    if (logger && typeof logger.info !== "function") throw new TypeError("createExtensions: logger, if provided, must be a Logger");
 
-    var logger = options.logger || need(D.createLogger, "logger")({ now: options.now, minLevel: "info" });
-    var api    = options.api    || need(D.createAPI, "api")({ oceanic: os });
-    var semver = options.versioning || D.versioning;
-    if (!semver || typeof semver.valid !== "function") throw new Error("createExtensions: versioning utility is unavailable — load core/versioning.js or pass { versioning }");
+    var installed = {};   // name -> { ext, commands: [fullName...] }
+    var commands = {};    // fullName -> { ext, handler }
 
-    var exts = {};      // id → { manifest, state, error, commands }
-    var order = [];     // registration order
-    var booted = false;
+    function log(level, msg) { if (logger) try { logger[level](msg); } catch (e) {} }
 
-    function boot() {
-      if (booted) return status();
-      var b = os.start();
-      booted = true;
-      logger.info("extensions host online — OceanicOS v" + os.version + " booted on pulse " + b.pulse);
-      return status();
-    }
+    function use(ext) {
+      if (!ext || typeof ext !== "object") throw new TypeError("use requires an extension object");
+      if (typeof ext.name !== "string" || !ext.name) throw new TypeError("an extension needs a non-empty string name");
+      if (/[.\s]/.test(ext.name)) throw new TypeError("extension name must not contain '.' or whitespace: " + ext.name);
+      if (typeof ext.setup !== "function") throw new TypeError("extension '" + ext.name + "' needs a setup(ctx) function");
+      if (installed[ext.name]) throw new Error("extension already installed: " + ext.name);
 
-    function register(manifest) {
-      var m = manifest || {};
-      if (!m.id || typeof m.id !== "string")        return { ok: false, error: "an extension needs a string id" };
-      if (!m.name || typeof m.name !== "string")    return { ok: false, error: "an extension needs a name" };
-      if (typeof m.activate !== "function")         return { ok: false, error: "an extension needs an activate(context) function" };
-      if (!semver.valid(m.version))                 return { ok: false, error: "'" + m.version + "' is not a valid SemVer version" };
-      if (exts[m.id])                               return { ok: false, error: "extension '" + m.id + "' is already registered" };
-      exts[m.id] = { manifest: m, state: "registered", error: null, commands: {} };
-      order.push(m.id);
-      logger.info("extension registered: " + m.id + "@" + m.version);
-      return { ok: true, extension: shape(m.id) };
-    }
-
-    // the context is the WHOLE surface an extension gets: the API and a log.
-    function contextFor(id) {
-      return {
+      var provided = [];
+      var ctx = {
+        oceanic: oceanic,
         api: api,
-        log: function (message) { logger.info("[ext:" + id + "] " + String(message)); }
+        log: function (msg) { log("info", ext.name + " · " + msg); },
+        provide: function (localName, handler) {
+          if (typeof localName !== "string" || !localName) throw new TypeError("provide requires a command name");
+          if (/[.\s]/.test(localName)) throw new TypeError("command name must not contain '.' or whitespace: " + localName);
+          if (typeof handler !== "function") throw new TypeError("provide requires a handler function for " + localName);
+          var full = ext.name + "." + localName;
+          if (commands[full]) throw new Error("command already provided: " + full);
+          commands[full] = { ext: ext.name, handler: handler };
+          provided.push(full);
+          return full;
+        }
       };
-    }
 
-    function activate(id) {
-      var e = exts[id];
-      if (!e) return { ok: false, error: "no such extension '" + id + "'" };
-      if (e.state === "active") return { ok: true, extension: shape(id) };
-      try {
-        var out = e.manifest.activate(contextFor(id)) || {};
-        e.commands = {};
-        var cmds = out.commands || {};
-        for (var name in cmds) if (typeof cmds[name] === "function") e.commands[name] = cmds[name];
-        e.state = "active";
-        e.error = null;
-        logger.info("extension activated: " + id + " (" + Object.keys(e.commands).length + " commands)");
-        return { ok: true, extension: shape(id) };
-      } catch (err) {
-        e.state = "failed";
-        e.error = String(err && err.message ? err.message : err);
-        e.commands = {};
-        logger.error("extension failed: " + id + " — " + e.error);
-        return { ok: false, error: e.error, extension: shape(id) };
+      try { ext.setup(ctx); }
+      catch (e) {
+        // roll back any commands the failed setup managed to register — no half-installs
+        provided.forEach(function (full) { delete commands[full]; });
+        throw new Error("extension '" + ext.name + "' failed to install: " + (e && e.message ? e.message : e));
       }
+
+      installed[ext.name] = { ext: ext, commands: provided, version: ext.version || null };
+      log("info", "installed extension '" + ext.name + "' (" + provided.length + " command" + (provided.length === 1 ? "" : "s") + ")");
+      return { name: ext.name, commands: provided.slice() };
     }
 
-    function deactivate(id) {
-      var e = exts[id];
-      if (!e) return { ok: false, error: "no such extension '" + id + "'" };
-      if (e.state !== "active") return { ok: false, error: "extension '" + id + "' is not active" };
-      if (typeof e.manifest.deactivate === "function") {
-        try { e.manifest.deactivate(); } catch (err) { logger.warn("extension '" + id + "' threw on deactivate — withdrawn anyway"); }
+    function command(fullName, args) {
+      var c = commands[fullName];
+      if (!c) return { ok: false, command: fullName, data: null, error: "unknown command: " + fullName };
+      try { return { ok: true, command: fullName, data: c.handler(args), error: null }; }
+      catch (e) { return { ok: false, command: fullName, data: null, error: String(e && e.message ? e.message : e) }; }
+    }
+
+    function remove(name) {
+      var rec = installed[name];
+      if (!rec) throw new Error("no extension installed named " + name);
+      if (typeof rec.ext.teardown === "function") {
+        try { rec.ext.teardown({ oceanic: oceanic, api: api, log: function (m) { log("info", name + " · " + m); } }); }
+        catch (e) { log("warn", "teardown of '" + name + "' threw: " + (e && e.message ? e.message : e)); }
       }
-      e.state = "inactive";
-      e.commands = {};
-      logger.info("extension deactivated: " + id);
-      return { ok: true, extension: shape(id) };
+      rec.commands.forEach(function (full) { delete commands[full]; });
+      delete installed[name];
+      log("info", "removed extension '" + name + "'");
+      return true;
     }
 
-    function commands() {
-      var palette = [];
-      order.forEach(function (id) {
-        var e = exts[id];
-        if (e.state !== "active") return;
-        Object.keys(e.commands).forEach(function (name) { palette.push({ extension: id, command: name }); });
+    function has(name) { return !!installed[name]; }
+    function list() {
+      return Object.keys(installed).map(function (n) {
+        return { name: n, version: installed[n].version, commands: installed[n].commands.slice() };
       });
-      return palette;
     }
+    function commandNames() { return Object.keys(commands).slice().sort(); }
+    function status() { return { extensions: Object.keys(installed).length, commands: Object.keys(commands).length }; }
 
-    function invoke(id, command, params) {
-      var e = exts[id];
-      if (!e) return { ok: false, error: "no such extension '" + id + "'" };
-      if (e.state !== "active") return { ok: false, error: "extension '" + id + "' is not active" };
-      var fn = e.commands[command];
-      if (!fn) return { ok: false, error: "extension '" + id + "' has no command '" + command + "'" };
-      try {
-        var data = fn(params || {});
-        logger.info("ext command: " + id + "." + command);
-        return { ok: true, extension: id, command: command, data: data };
-      } catch (err) {
-        var msg = String(err && err.message ? err.message : err);
-        logger.warn("ext command failed: " + id + "." + command + " — " + msg);
-        return { ok: false, extension: id, command: command, error: msg };
-      }
-    }
-
-    function shape(id) {
-      var e = exts[id];
-      return { id: e.manifest.id, name: e.manifest.name, version: e.manifest.version,
-               state: e.state, error: e.error, commands: Object.keys(e.commands).sort() };
-    }
-
-    function list() { return order.map(shape); }
-
-    function status() {
-      var active = 0; order.forEach(function (id) { if (exts[id].state === "active") active += 1; });
-      return { version: VERSION, booted: booted, registered: order.length, active: active, commands: commands().length };
-    }
-
-    return {
-      version: VERSION,
-      boot: boot, register: register, activate: activate, deactivate: deactivate,
-      invoke: invoke, commands: commands, list: list, status: status,
-      oceanic: os, api: api, logger: logger
-    };
+    return { use: use, command: command, remove: remove, has: has, list: list, commands: commandNames, status: status };
   }
 
-  // ---- sample extension, the way the Agent ships policies ----
-  createExtensions.samples = {
-    tideWatch: {
-      id: "tide-watch", name: "Tide Watch", version: "1.0.0",
-      activate: function (ctx) {
-        ctx.log("watching the tide");
-        return { commands: {
-          pending: function () {
-            var r = ctx.api.call("reality.list", { status: "pending" });
-            return r.ok ? { pending: r.data.length, ids: r.data.map(function (o) { return o.id; }) } : { error: r.error };
-          },
-          mark: function (params) {
-            var r = ctx.api.call("reality.observe", { observation: (params && params.text) || "tide checked", source: "ext:tide-watch" });
-            return r.ok ? r.data : { error: r.error };
-          }
-        } };
+  // ---- example extensions: proof that new capabilities can just be plugged in ----
+  createExtensions.examples = {
+    // a trivial greeter — contributes one pure command
+    greeter: {
+      name: "greeter", version: "1.0.0",
+      setup: function (ctx) {
+        ctx.provide("hello", function (args) {
+          var who = (args && args.who) || "harbor";
+          return "Take a Drop, " + who + ".";
+        });
+      }
+    },
+    // a real capability plugin: "survey" observes a fact AND verifies it in one step,
+    // driving the system only through the API it was handed
+    surveyor: {
+      name: "surveyor", version: "1.0.0",
+      setup: function (ctx) {
+        ctx.provide("survey", function (args) {
+          if (!args || typeof args.fact !== "string" || !args.fact) throw new Error("survey requires { fact }");
+          var obs = ctx.api.call("reality.observe", { observation: args.fact, source: "surveyor", evidence: args.evidence || null });
+          if (!obs.ok) throw new Error(obs.error);
+          var ver = ctx.api.call("reality.verify", { id: obs.data.id, note: args.note || "surveyed on site" });
+          if (!ver.ok) throw new Error(ver.error);
+          return { id: ver.data.id, status: ver.data.status, fact: args.fact };
+        });
       }
     }
   };
 
-  createExtensions.VERSION = VERSION;
   return createExtensions;
 });

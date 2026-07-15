@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Governance</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .s-proposed{color:#8fb3c4} .s-under-review{color:#fbbf24} .s-ratified{color:#34d399}
+  .s-rejected{color:#fb7185} .s-withdrawn{color:#94a3b8}
+  .endorse{color:#34d399} .object{color:#fb7185}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Governance</b> (build 0043, Stage 5 · Collaboration). Proposal → review → ratify, over changes — echoes the Charter's Article VII. Composed on <b>Identity</b> (0035). Suite runs on the <b>Verification Engine</b> (0004). <b>Closes Stage 5 (8/8).</b></div>
+<div id="suite"></div>
+
+<h2>Live proof — a change makes its way to ratification</h2>
+<table id="journey"><tr><th>Stage</th><th>Status</th><th>Endorse</th><th>Object</th><th>Detail</th></tr></table>
+<div class="note">A steward cannot ratify until the change has earned a quorum of endorsements and carries no standing objection. Nothing is ever deleted — a superseded review remains in the ocean beneath the current one.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="identity.js"></script>
+<script src="governance.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function seeded(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "gov-test" });
+  var I = OceanicCore.createIdentity({ oceanic: os });
+  I.register({ name: "Kai",  role: "steward" });      // kai   — may ratify/reject
+  I.register({ name: "Mara", role: "contributor" });  // mara  — may propose/review
+  I.register({ name: "Ola",  role: "contributor" });  // ola   — may propose/review
+  I.register({ name: "Obs",  role: "observer" });     // obs   — may only read
+  var G = OceanicCore.createGovernance({ oceanic: os, identity: I });
+  return { os: os, I: I, G: G };
+}
+function aProposal(G, by){
+  return G.propose({ title: "Adopt tide-table v2", rationale: "the old table drifts at spring tides",
+    impact: "affects all winter routing", plan: "swap the table, keep both live for a week",
+    migration: "v1 stays archived and readable", by: by || "mara" });
+}
+
+var suite = OceanicCore.createVerifier({ name: "Governance (build 0043)" });
+
+suite.test("factory requires an OceanicOS and an Identity, and exposes the loop", function(a){
+  a.equal(typeof OceanicCore.createGovernance, "function");
+  a.throws(function(){ OceanicCore.createGovernance({}); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createGovernance({ oceanic: seeded().os }); }, "no identity");
+  var G = seeded().G;
+  ["propose","review","ratify","reject","withdraw","get","reviews","list","pending","status"].forEach(function(fn){
+    a.equal(typeof G[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("propose records the change with its four documented fields", function(a){
+  var f = seeded();
+  var p = aProposal(f.G);
+  a.equal(p.id, "adopt-tide-table-v2");
+  a.equal(p.status, "proposed");
+  a.equal(p.by, "mara");
+  a.equal(p.rationale, "the old table drifts at spring tides");
+  a.equal(p.impact, "affects all winter routing");
+  a.ok(p.plan && p.migration, "carries plan and migration guidance");
+  a.equal(p.endorsements, 0); a.equal(p.objections, 0);
+});
+
+suite.test("propose demands a title, a rationale, and contributor authority", function(a){
+  var f = seeded();
+  a.throws(function(){ f.G.propose({ rationale: "x", by: "mara" }); }, "no title");
+  a.throws(function(){ f.G.propose({ title: "T", by: "mara" }); }, "no rationale");
+  a.throws(function(){ f.G.propose({ title: "T", rationale: "why", by: "obs" }); }, "an observer may not propose");
+  a.throws(function(){ f.G.propose({ title: "T", rationale: "why", by: "ghost" }); }, "unknown actor");
+  aProposal(f.G);
+  a.throws(function(){ aProposal(f.G); }, "duplicate id refused");
+});
+
+suite.test("review moves a proposal under review and records the verdict", function(a){
+  var f = seeded();
+  aProposal(f.G);
+  var p = f.G.review("adopt-tide-table-v2", "ola", "endorse", "sounds right");
+  a.equal(p.status, "under-review");
+  a.equal(p.endorsements, 1);
+  a.deepEqual(f.G.reviews("adopt-tide-table-v2"), [{ by: "ola", verdict: "endorse", note: "sounds right" }]);
+  a.throws(function(){ f.G.review("adopt-tide-table-v2", "mara", "endorse"); }, "a proposer cannot review their own proposal");
+  a.throws(function(){ f.G.review("adopt-tide-table-v2", "ola", "maybe"); }, "verdict must be endorse|object");
+});
+
+suite.test("an actor has one current review — changing it supersedes, never duplicates", function(a){
+  var f = seeded();
+  aProposal(f.G);
+  f.G.review("adopt-tide-table-v2", "ola", "endorse");
+  var p = f.G.review("adopt-tide-table-v2", "ola", "object", "actually the plan is risky");
+  a.equal(p.reviews.length, 1, "still one review from ola");
+  a.equal(p.endorsements, 0);
+  a.equal(p.objections, 1, "the endorse was superseded by the objection");
+});
+
+suite.test("ratify needs a steward, a quorum of endorsements, and no standing objection", function(a){
+  var f = seeded();
+  aProposal(f.G);
+  a.throws(function(){ f.G.ratify("adopt-tide-table-v2", "mara"); }, "a contributor may not ratify");
+  a.throws(function(){ f.G.ratify("adopt-tide-table-v2", "kai"); }, "no endorsement yet → below quorum");
+  f.G.review("adopt-tide-table-v2", "ola", "object", "risky");
+  a.throws(function(){ f.G.ratify("adopt-tide-table-v2", "kai"); }, "a standing objection blocks ratification");
+});
+
+suite.test("ratify succeeds once endorsed and unopposed — and is terminal", function(a){
+  var f = seeded();
+  aProposal(f.G);
+  f.G.review("adopt-tide-table-v2", "ola", "endorse");
+  var p = f.G.ratify("adopt-tide-table-v2", "kai");
+  a.equal(p.status, "ratified");
+  a.equal(p.decidedBy, "kai");
+  a.throws(function(){ f.G.review("adopt-tide-table-v2", "ola", "object"); }, "cannot review a ratified proposal");
+  a.throws(function(){ f.G.ratify("adopt-tide-table-v2", "kai"); }, "cannot ratify twice");
+});
+
+suite.test("reject needs a steward and records the reason (terminal)", function(a){
+  var f = seeded();
+  aProposal(f.G);
+  a.throws(function(){ f.G.reject("adopt-tide-table-v2", "ola", "no"); }, "a contributor may not reject");
+  var p = f.G.reject("adopt-tide-table-v2", "kai", "the migration risk is too high");
+  a.equal(p.status, "rejected");
+  a.equal(p.reason, "the migration risk is too high");
+  a.throws(function(){ f.G.withdraw("adopt-tide-table-v2", "mara"); }, "cannot withdraw a rejected proposal");
+});
+
+suite.test("only the proposer (or an admin) may withdraw", function(a){
+  var f = seeded();
+  aProposal(f.G, "mara");
+  a.throws(function(){ f.G.withdraw("adopt-tide-table-v2", "ola"); }, "another contributor may not withdraw it");
+  var p = f.G.withdraw("adopt-tide-table-v2", "mara");
+  a.equal(p.status, "withdrawn");
+});
+
+suite.test("quorum is configurable — a stricter house needs more endorsements", function(a){
+  var f = seeded();
+  var G2 = OceanicCore.createGovernance({ oceanic: f.os, identity: f.I, quorum: 2 });
+  G2.propose({ title: "Bigger change", rationale: "wide impact", by: "kai" });
+  G2.review("bigger-change", "mara", "endorse");
+  a.throws(function(){ G2.ratify("bigger-change", "kai"); }, "one endorsement is not enough when quorum is 2");
+  G2.review("bigger-change", "ola", "endorse");
+  a.equal(G2.ratify("bigger-change", "kai").status, "ratified", "two endorsements clear the bar");
+});
+
+suite.test("authority can be conferred externally (e.g. a team) via roleOf", function(a){
+  var f = seeded();
+  // mara is only a contributor by Identity, but her team confers steward authority
+  var G2 = OceanicCore.createGovernance({ oceanic: f.os, identity: f.I,
+    roleOf: function(id){ return id === "mara" ? "steward" : null; } });
+  G2.propose({ title: "Team-backed change", rationale: "why", by: "ola" });
+  G2.review("team-backed-change", "kai", "endorse");
+  a.equal(G2.ratify("team-backed-change", "mara").status, "ratified", "team-conferred steward may ratify");
+});
+
+suite.test("reads report cleanly — unknown ids, pending set, and a live tally", function(a){
+  var f = seeded();
+  a.equal(f.G.get("ghost"), null, "unknown proposal → null");
+  a.throws(function(){ f.G.reviews("ghost"); }, "reviews of an unknown proposal throws");
+  aProposal(f.G, "mara");
+  f.G.propose({ title: "Second thing", rationale: "why", by: "ola" });
+  f.G.reject("second-thing", "kai");
+  a.equal(f.G.pending().length, 1, "one still open, one rejected");
+  var s = f.G.status();
+  a.equal(s.proposals, 2);
+  a.equal(s.byStatus.rejected, 1);
+  a.equal(s.quorum, 1);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Governance";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: a change on its journey ---- */
+(function(){
+  var f = seeded();
+  var table = document.getElementById("journey");
+  function row(stage, p, detail){
+    var r = table.insertRow();
+    r.insertCell().textContent = stage;
+    var c = r.insertCell(); c.textContent = p.status; c.className = "s-" + p.status;
+    r.insertCell().textContent = p.endorsements;
+    r.insertCell().textContent = p.objections;
+    r.insertCell().textContent = detail;
+  }
+  var p = aProposal(f.G, "mara"); row("proposed", p, "mara proposes tide-table v2");
+  p = f.G.review("adopt-tide-table-v2", "ola", "object", "worried about the migration"); row("first review", p, "ola objects");
+  p = f.G.review("adopt-tide-table-v2", "ola", "endorse", "plan addresses it"); row("review revised", p, "ola's objection is superseded by an endorsement");
+  p = f.G.ratify("adopt-tide-table-v2", "kai"); row("ratified", p, "kai (steward) ratifies — quorum met, no objection");
+})();
+</script>
+</body>
+</html>

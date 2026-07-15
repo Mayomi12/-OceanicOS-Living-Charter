@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Migration</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .left{color:#fb7185} .kept{color:#34d399}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Migration</b> (build 0058, Stage 8 · Stewardship). The one lawful boundary where an ocean is rebuilt into a successor — schema upgrades, and the fulfilment of Privacy's promise: redacted originals are LEFT BEHIND, not even in deep history. The successor must boot and pass a leak check before it is returned. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — an ocean crosses over</h2>
+<table id="mig"><tr><th>Chain</th><th>In the source</th><th>In the successor</th></tr></table>
+<div id="migline" class="note"></div>
+<div class="note">Unredacted chains cross with their full history intact. A redacted chain sends only its tombstone — the fact that something was known and withdrawn survives; the content does not. Every migration documents itself in the successor, and the source is never touched.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="privacy.js"></script>
+<script src="migration.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function rig(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "mig-src" });
+  os.start();
+  var P = OceanicCore.createPrivacy({ oceanic: os });
+  var M = OceanicCore.createMigration({ now: clock });
+  return { os: os, P: P, M: M };
+}
+function successorMemory(snapshot){
+  var d = {};
+  var storage = { getItem: function(k){ return (k in d) ? d[k] : null; }, setItem: function(k,v){ d[k] = v; } };
+  storage.setItem("oceanicos.memory", snapshot);
+  return OceanicCore.createMemory({ storage: storage, now: clock });
+}
+
+var suite = OceanicCore.createVerifier({ name: "Migration (build 0058)" });
+
+suite.test("factory exposes migrate and dryRun; inputs are guarded", function(a){
+  a.equal(typeof OceanicCore.createMigration, "function");
+  var f = rig();
+  ["migrate","dryRun"].forEach(function(fn){ a.equal(typeof f.M[fn], "function", "exposes " + fn); });
+  a.throws(function(){ f.M.migrate("not json"); }, "bad snapshot refused");
+  a.throws(function(){ f.M.migrate({}); }, "no records array refused");
+  a.throws(function(){ f.M.migrate(f.os.memory, { transforms: [{ name: "x" }] }); }, "a transform needs when and apply");
+});
+
+suite.test("a clean ocean crosses whole — and the migration documents itself", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "steady seas", source: "watch" });
+  f.os.reality.verify(o.meta.oid);
+  var out = f.M.migrate(f.os.memory);
+  a.equal(out.manifest.leftBehind, 0);
+  a.equal(out.manifest.moved, out.manifest.total, "everything moved");
+  var mem = successorMemory(out.snapshot);
+  var migs = mem.recall({ type: "migration" });
+  a.equal(migs.length, 1, "the successor's newest record is the migration itself");
+  a.equal(migs[0].meta.manifest.moved, out.manifest.moved);
+  a.equal(mem.status().count, out.manifest.moved + 1, "moved records + the manifest record");
+});
+
+suite.test("PRIVACY'S PROMISE FULFILLED — redacted originals do not cross, not even in deep history", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "the sensitive medical detail", source: "clinic" });
+  f.os.reality.verify(o.meta.oid);
+  f.P.mark(o.meta.oid, { subject: "mara", sensitivity: "sensitive" });
+  f.P.redact(o.meta.oid, "subject request");
+  // in the SOURCE, deep history still has it (privacy's honest limit)
+  var deepSrc = f.os.memory.recall({ includeSuperseded: true }).map(function(r){ return r.body; }).join(" ");
+  a.ok(deepSrc.indexOf("the sensitive medical detail") >= 0, "the source's deep history still holds it");
+  var out = f.M.migrate(f.os.memory);
+  a.ok(out.manifest.leftBehind >= 3, "the original + its amendments were left behind");
+  var mem = successorMemory(out.snapshot);
+  var deep = mem.recall({ includeSuperseded: true }).map(function(r){ return r.body; }).join(" ");
+  a.equal(deep.indexOf("the sensitive medical detail"), -1, "GONE — not even deep history carries it");
+  a.ok(deep.indexOf("[redacted") >= 0, "…but the tombstone crossed: the withdrawal itself is remembered");
+  a.equal(out.manifest.severedLinks, 1, "the closed scar is counted");
+});
+
+suite.test("unredacted chains keep their FULL history through the crossing", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "the light is lit", source: "keeper" });
+  f.os.reality.verify(o.meta.oid); // an amendment — history
+  var out = f.M.migrate(f.os.memory);
+  var mem = successorMemory(out.snapshot);
+  a.equal(mem.recall({ includeSuperseded: true }).length - 1, 2, "pending original + verified amendment both crossed");
+  a.equal(mem.recall({}).length - 1, 1, "one current observation");
+  a.ok(mem.recall({ includeSuperseded: true }).some(function(r){ return r.meta && r.meta.status === "pending"; }),
+    "the pending original is still in deep history — unredacted history is sacred");
+});
+
+suite.test("a mixed ocean: manifest arithmetic holds exactly", function(a){
+  var f = rig();
+  var keep = f.os.reality.observe({ observation: "public fact", source: "s" });
+  f.os.reality.verify(keep.meta.oid);
+  var gone = f.os.reality.observe({ observation: "private detail", source: "s" });
+  f.P.mark(gone.meta.oid, { subject: "kai", sensitivity: "personal" });
+  f.P.redact(gone.meta.oid, "asked");
+  var m = f.M.dryRun(f.os.memory);
+  a.equal(m.total, m.moved + m.leftBehind, "total = moved + leftBehind");
+  a.ok(m.leftBehind >= 2, "the private chain's ancestors stay");
+  var out = f.M.migrate(f.os.memory);
+  a.deepEqual({ total: out.manifest.total, moved: out.manifest.moved, leftBehind: out.manifest.leftBehind },
+              { total: m.total, moved: m.moved, leftBehind: m.leftBehind }, "dryRun told the truth");
+});
+
+suite.test("purge can be declined — an archival copy keeps everything", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "the detail", source: "s" });
+  f.P.mark(o.meta.oid, { subject: "kai", sensitivity: "personal" });
+  f.P.redact(o.meta.oid, "asked");
+  var out = f.M.migrate(f.os.memory, { purgeRedacted: false });
+  a.equal(out.manifest.leftBehind, 0, "explicitly declined — nothing left behind");
+  var deep = successorMemory(out.snapshot).recall({ includeSuperseded: true }).map(function(r){ return r.body; }).join(" ");
+  a.ok(deep.indexOf("the detail") >= 0, "the archival successor carries full history");
+});
+
+suite.test("schema transforms upgrade records — counted, content preserved", function(a){
+  var f = rig();
+  f.os.reality.observe({ observation: "one", source: "s" });
+  f.os.reality.observe({ observation: "two", source: "s" });
+  var out = f.M.migrate(f.os.memory, { transforms: [{
+    name: "observation-schema-v2",
+    when: function(r){ return r.type === "observation"; },
+    apply: function(r){ r.meta.schemaVersion = 2; return r; }
+  }] });
+  a.equal(out.manifest.transformed, 2);
+  a.deepEqual(out.manifest.transforms, ["observation-schema-v2"]);
+  var mem = successorMemory(out.snapshot);
+  mem.recall({ type: "observation" }).forEach(function(r){
+    a.equal(r.meta.schemaVersion, 2, "upgraded");
+    a.ok(r.body === "one" || r.body === "two", "content untouched");
+  });
+});
+
+suite.test("a transform may not forge identity or rewrite history links", function(a){
+  var f = rig();
+  f.os.reality.observe({ observation: "x", source: "s" });
+  a.throws(function(){
+    f.M.migrate(f.os.memory, { transforms: [{ name: "forger",
+      when: function(){ return true; }, apply: function(r){ r.id = "forged"; return r; } }] });
+  }, "changing an id is refused");
+  var o = f.os.reality.observe({ observation: "y", source: "s" });
+  f.os.reality.verify(o.meta.oid);
+  a.throws(function(){
+    f.M.migrate(f.os.memory, { transforms: [{ name: "eraser",
+      when: function(r){ return !!r.supersedes; }, apply: function(r){ r.supersedes = null; return r; } }] });
+  }, "severing a supersession link is refused");
+});
+
+suite.test("the successor is a REAL working ocean — engines continue where the source left off", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "carried across", source: "s" });
+  var out = f.M.migrate(f.os.memory);
+  var d = {};
+  var storage = { getItem: function(k){ return (k in d) ? d[k] : null; }, setItem: function(k,v){ d[k] = v; } };
+  storage.setItem("oceanicos.next", out.snapshot);
+  var next = OceanicCore.createOceanic({ storage: storage, storageKey: "oceanicos.next", manual: true, name: "next", now: clock });
+  next.start();
+  var carried = next.reality.get(o.meta.oid);
+  a.ok(carried, "the observation exists in the successor");
+  a.equal(carried.meta.status, "pending");
+  var v = next.reality.verify(o.meta.oid);
+  a.equal(v.meta.status, "verified", "and its status machine keeps running");
+});
+
+suite.test("the source is never touched, and migration is repeatable", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "a delicate berth assignment", source: "s" });
+  f.P.mark(o.meta.oid, { subject: "kai", sensitivity: "personal" });
+  f.P.redact(o.meta.oid, "asked");
+  var before = f.os.memory.status();
+  var m1 = f.M.migrate(f.os.memory).manifest;
+  var m2 = f.M.migrate(f.os.memory).manifest;
+  a.deepEqual(f.os.memory.status(), before, "pure — the source is unchanged");
+  a.deepEqual({ t: m1.total, m: m1.moved, l: m1.leftBehind }, { t: m2.total, m: m2.moved, l: m2.leftBehind }, "deterministic");
+});
+
+suite.test("the manifest reports its own verification", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "secret thing", source: "s" });
+  f.P.mark(o.meta.oid, { subject: "kai", sensitivity: "sensitive" });
+  f.P.redact(o.meta.oid, "asked");
+  var out = f.M.migrate(f.os.memory);
+  a.ok(out.manifest.verified.hydrated >= 1, "the successor was hydrated before being returned");
+  a.ok(out.manifest.verified.leakChecked >= 2, "every purged body was leak-checked");
+});
+
+suite.test("dryRun sees the consequences and builds nothing", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "another delicate note", source: "s" });
+  f.P.mark(o.meta.oid, { subject: "kai", sensitivity: "personal" });
+  f.P.redact(o.meta.oid, "asked");
+  var m = f.M.dryRun(f.os.memory);
+  a.ok(m.leftBehind >= 2);
+  a.equal(m.snapshot, undefined, "no successor was built");
+  a.equal(m.verified, undefined, "nothing to verify — nothing was made");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Migration";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = rig();
+  var pub = f.os.reality.observe({ observation: "the light is lit", source: "keeper" });
+  f.os.reality.verify(pub.meta.oid);
+  var priv = f.os.reality.observe({ observation: "Mara's medical note from the clinic", source: "clinic" });
+  f.P.mark(priv.meta.oid, { subject: "mara", sensitivity: "sensitive" });
+  f.P.redact(priv.meta.oid, "subject request");
+  var out = f.M.migrate(f.os.memory);
+  var mem = successorMemory(out.snapshot);
+  var deep = mem.recall({ includeSuperseded: true }).map(function(r){ return r.body; });
+  var table = document.getElementById("mig");
+  function row(chain, src, dst, cls){
+    var tr = table.insertRow();
+    tr.insertCell().textContent = chain;
+    tr.insertCell().textContent = src;
+    var c = tr.insertCell(); c.textContent = dst; c.className = cls;
+  }
+  row("the harbor light", "pending → verified (2 records)", "full history crossed (" + deep.filter(function(b){ return b.indexOf("light") >= 0; }).length + " records)", "kept");
+  row("Mara's medical note", "original + mark + redaction (3 records)", "only the tombstone crossed — content gone from deep history", "left");
+  row("(the migration itself)", "—", deep.filter(function(b){ return b.indexOf("migration:") === 0; })[0], "kept");
+  document.getElementById("migline").textContent =
+    "manifest: " + JSON.stringify(out.manifest);
+})();
+</script>
+</body>
+</html>

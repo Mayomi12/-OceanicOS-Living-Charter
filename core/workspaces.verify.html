@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Workspaces</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .lead{color:#34d399} .member{color:#38bdf8}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Workspaces</b> (build 0037, Stage 5 · Collaboration). Actor-centric collaboration spaces. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — who is in the workspace</h2>
+<table id="ws"><tr><th>Workspace</th><th>Member</th><th>Role</th></tr></table>
+<div class="note">Every member is a registered actor (validated against Identity, 0035); membership lives append-only in the Memory Ocean, so who belonged when is never erased.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="identity.js"></script>
+<script src="workspaces.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function fresh(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "ws-test" });
+  var I = OceanicCore.createIdentity({ oceanic: os });
+  ["Kai","Nav","Hand"].forEach(function(n){ I.register({ name: n, role: "contributor" }); });
+  return { os: os, I: I, W: OceanicCore.createWorkspaces({ oceanic: os, identity: I }) };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Workspaces (build 0037)" });
+
+suite.test("factory requires an OceanicOS/Memory; a bad identity is refused", function(a){
+  a.equal(typeof OceanicCore.createWorkspaces, "function");
+  a.throws(function(){ OceanicCore.createWorkspaces({}); });
+  a.throws(function(){ OceanicCore.createWorkspaces({ oceanic: fresh().os, identity: {} }); });
+  var W = fresh().W;
+  ["create","add","remove","link","close","get","has","list","members","byMember","status"].forEach(function(fn){
+    a.equal(typeof W[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("create() opens an active workspace with a slug id and no members", function(a){
+  var W = fresh().W;
+  var w = W.create({ name: "Winter Routing", purpose: "safe passage" });
+  a.equal(w.id, "winter-routing");
+  a.equal(w.status, "active");
+  a.equal(w.purpose, "safe passage");
+  a.deepEqual(w.members, []);
+  a.throws(function(){ W.create({}); }, "needs a name");
+  a.throws(function(){ W.create({ name: "Winter Routing" }); }, "duplicate id");
+});
+
+suite.test("add() joins a registered actor; unknown actors are refused", function(a){
+  var f = fresh();
+  var w = f.W.create({ name: "Crew" });
+  f.W.add(w.id, "kai", "lead");
+  f.W.add(w.id, "nav");
+  a.deepEqual(f.W.members(w.id), [{ actor: "kai", role: "lead" }, { actor: "nav", role: "member" }]);
+  a.throws(function(){ f.W.add(w.id, "ghost"); }, "no such actor in the register");
+  a.throws(function(){ f.W.add(w.id, "hand", "captain"); }, "bad member role");
+});
+
+suite.test("adding an existing member updates their role openly (no duplicate)", function(a){
+  var f = fresh();
+  var w = f.W.create({ name: "Crew" });
+  f.W.add(w.id, "nav", "member");
+  f.W.add(w.id, "nav", "lead");
+  a.equal(f.W.members(w.id).length, 1, "still one entry");
+  a.equal(f.W.members(w.id)[0].role, "lead", "role updated");
+});
+
+suite.test("remove() parts ways; removing a non-member is refused", function(a){
+  var f = fresh();
+  var w = f.W.create({ name: "Crew" });
+  f.W.add(w.id, "kai"); f.W.add(w.id, "nav");
+  f.W.remove(w.id, "nav");
+  a.deepEqual(f.W.members(w.id).map(function(m){ return m.actor; }), ["kai"]);
+  a.throws(function(){ f.W.remove(w.id, "hand"); }, "not a member");
+});
+
+suite.test("link() gathers records into the space", function(a){
+  var f = fresh();
+  var w = f.W.create({ name: "Crew" });
+  f.W.link(w.id, { kind: "observation", id: "o-1" });
+  f.W.link(w.id, { kind: "knowledge", id: "k-1" });
+  a.deepEqual(f.W.get(w.id).links, [{ kind: "observation", id: "o-1" }, { kind: "knowledge", id: "k-1" }]);
+  a.throws(function(){ f.W.link(w.id, { kind: "wormhole", id: "x" }); }, "bad kind");
+});
+
+suite.test("byMember() lists the workspaces an actor belongs to", function(a){
+  var f = fresh();
+  var w1 = f.W.create({ name: "Winter Routing" }); f.W.add(w1.id, "kai");
+  var w2 = f.W.create({ name: "Lighthouse Repair" }); f.W.add(w2.id, "kai"); f.W.add(w2.id, "nav");
+  a.deepEqual(f.W.byMember("kai").map(function(x){ return x.id; }).sort(), ["lighthouse-repair", "winter-routing"]);
+  a.deepEqual(f.W.byMember("nav").map(function(x){ return x.id; }), ["lighthouse-repair"]);
+  a.deepEqual(f.W.byMember("hand"), []);
+});
+
+suite.test("close() is terminal — a closed workspace accepts no more changes", function(a){
+  var f = fresh();
+  var w = f.W.create({ name: "Crew" });
+  f.W.add(w.id, "kai");
+  a.equal(f.W.close(w.id).status, "closed");
+  a.equal(f.W.has(w.id), false, "no longer active");
+  a.throws(function(){ f.W.add(w.id, "nav"); }, "cannot add to a closed workspace");
+  a.throws(function(){ f.W.close(w.id); }, "already closed");
+  a.equal(f.W.list().length, 0, "not in the active list");
+  a.equal(f.W.list(true).length, 1, "still there with includeClosed");
+});
+
+suite.test("membership is append-only in the Memory Ocean — history is kept", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  var I = OceanicCore.createIdentity({ oceanic: os }); I.register({ name: "Kai", role: "contributor" });
+  var W = OceanicCore.createWorkspaces({ oceanic: os, identity: I });
+  var w = W.create({ name: "Crew" });   // 1
+  W.add(w.id, "kai");                     // +1
+  W.remove(w.id, "kai");                  // +1
+  a.equal(os.memory.recall({ type: "workspace" }).length, 1, "one current workspace record");
+  a.equal(os.memory.recall({ type: "workspace", includeSuperseded: true }).length, 3, "every version kept");
+});
+
+suite.test("without an Identity, membership is unvalidated (works standalone)", function(a){
+  var W = OceanicCore.createWorkspaces({ oceanic: OceanicCore.createOceanic({ now: clock, manual: true }) });
+  W.create({ name: "Solo" });
+  a.equal(W.add("solo", "anyone").members[0].actor, "anyone", "no register to check against");
+});
+
+suite.test("status() summarises active/closed workspaces and total members", function(a){
+  var f = fresh();
+  var w1 = f.W.create({ name: "A" }); f.W.add(w1.id, "kai"); f.W.add(w1.id, "nav");
+  var w2 = f.W.create({ name: "B" }); f.W.close(w2.id);
+  a.deepEqual(f.W.status(), { workspaces: 1, closed: 1, members: 2 });
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Workspaces";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = fresh();
+  var w = f.W.create({ name: "Winter Routing", purpose: "safe passage this season" });
+  f.W.add(w.id, "kai", "lead");
+  f.W.add(w.id, "nav", "member");
+  f.W.add(w.id, "hand", "member");
+  var table = document.getElementById("ws");
+  f.W.members(w.id).forEach(function(m){
+    var row = table.insertRow();
+    row.insertCell().textContent = w.name;
+    row.insertCell().textContent = f.I.get(m.actor).name + " (" + m.actor + ")";
+    var c = row.insertCell(); c.textContent = m.role.toUpperCase(); c.className = m.role;
+  });
+})();
+</script>
+</body>
+</html>

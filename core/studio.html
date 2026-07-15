@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ω∞ Tokenization Studio</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:920px;margin:auto}
+  h1{font-size:20px} h2{font-size:14px;color:#8fb3c4;margin-top:26px;border-bottom:1px solid #12455f;padding-bottom:5px}
+  .sub{color:#8fb3c4;font-size:13px}
+  label{display:block;margin-top:12px;color:#8fb3c4;font-size:13px}
+  textarea,input[type=number],input[type=text]{width:100%;box-sizing:border-box;background:#062033;color:#e8f6fb;border:1px solid #12455f;padding:8px;font-family:inherit;font-size:13px;margin-top:4px}
+  textarea{min-height:90px}
+  button{background:#0a2a3f;color:#38bdf8;border:1px solid #12455f;padding:8px 16px;font-family:inherit;font-size:13px;cursor:pointer;margin-top:10px;margin-right:8px}
+  button:hover{background:#123a55}
+  #chips span{display:inline-block;margin:2px;padding:3px 7px;border:1px solid #12455f;border-radius:4px;font-size:12px}
+  #chips .c0{background:#0a2a3f} #chips .c1{background:#123a2a} #chips .c2{background:#3a2a12} #chips .c3{background:#2a123a}
+  table{border-collapse:collapse;width:100%;margin-top:10px}
+  td,th{border:1px solid #12455f;padding:5px 10px;font-size:12px;text-align:left}
+  .ok{color:#34d399;font-weight:bold} .warn{color:#fbbf24} .err{color:#fb7185}
+  #trainline,#encline{margin-top:8px;font-size:13px;color:#8fb3c4}
+  .note{color:#8fb3c4;font-size:12px;margin-top:18px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ Tokenization Studio</h1>
+<p class="sub">A living byte-pair-encoding workbench — root: <b>Karpathy's minbpe</b>. Two variants, both byte-safe on any Unicode and neither with special tokens: the <b>Basic</b> tokenizer (build 0068) and its <b>Regex</b> sibling (build 0073), which splits text on a <b>GPT-style pattern first</b> so merges never cross a letter/digit/punctuation/space boundary. Train on any corpus, watch the merges it learns, tokenize anything, carry the tokenizer away as JSON. Everything happens here, in this page — no server, nothing leaves.</p>
+
+<h2>1 · Choose the tokenizer, then train</h2>
+<fieldset style="border:1px solid #12455f;padding:8px 12px;margin-top:8px">
+  <legend style="color:#8fb3c4;font-size:13px;padding:0 6px">Variant</legend>
+  <label style="display:inline-block;margin:0 16px 0 0;color:#e8f6fb">
+    <input type="radio" name="variant" value="basic" checked /> Basic <span class="sub">(0068 · no pre-split)</span>
+  </label>
+  <label style="display:inline-block;margin:0;color:#e8f6fb">
+    <input type="radio" name="variant" value="regex" /> Regex <span class="sub">(0073 · GPT-2 split)</span>
+  </label>
+  <div id="patline" class="sub" style="margin-top:6px"></div>
+</fieldset>
+<label for="corpus">Training corpus</label>
+<textarea id="corpus">take a drop, leave a drop, return a better drop — the ocean remembers every drop, and the ocean teaches drop by drop</textarea>
+<label for="vsize">Vocabulary size (256 bytes + merges to learn)</label>
+<input id="vsize" type="number" min="256" step="1" value="300" />
+<button id="train">Train</button>
+<button id="reset">New tokenizer</button>
+<div id="trainline">untrained — encode() is plain UTF-8 bytes until you train</div>
+
+<h2>2 · Tokenize</h2>
+<label for="text">Text to encode (updates live)</label>
+<input id="text" type="text" value="return a better drop to the ocean" />
+<div id="chunkline" class="sub" style="margin-top:8px"></div>
+<div id="chips" aria-live="polite"></div>
+<div id="encline"></div>
+
+<h2>3 · The merges it learned</h2>
+<table id="merges"><tr><th>Rank</th><th>Pair</th><th>New token</th><th>Renders as</th></tr></table>
+
+<h2>4 · Carry it away</h2>
+<button id="exportBtn">Export tokenizer JSON</button>
+<button id="importBtn">Import from JSON below</button>
+<label for="io">Tokenizer JSON (export target / import source)</label>
+<textarea id="io" aria-label="tokenizer JSON"></textarea>
+<div id="ioline" class="sub"></div>
+
+<div class="note">Like every surface here, this page holds itself to the house law: the tokenizers under your hands are the verified capabilities (core/tokenizer.js and core/tokenizer-regex.js, both suites in Continuous Verification) — the studio is only glass over them.</div>
+
+<script src="tokenizer.js"></script>
+<script src="tokenizer-regex.js"></script>
+<script>
+"use strict";
+var variant = "basic";                 // "basic" (0068) | "regex" (0073)
+function makeTokenizer(v){ return (v || variant) === "regex" ? OceanicCore.createRegexTokenizer() : OceanicCore.createTokenizer(); }
+function loadTokenizer(json){          // auto-detect the variant from the snapshot's own algorithm field
+  var algo = ""; try { algo = (JSON.parse(json) || {}).algorithm || ""; } catch (e) {}
+  if (algo === "minbpe/regex") { variant = "regex"; return OceanicCore.createRegexTokenizer.load(json); }
+  variant = "basic"; return OceanicCore.createTokenizer.load(json);
+}
+var tok = makeTokenizer();
+var trained = false;
+
+function el(id){ return document.getElementById(id); }
+function esc(s){ return JSON.stringify(String(s)).slice(1, -1); }
+
+function renderMerges(){
+  var table = el("merges");
+  while (table.rows.length > 1) table.deleteRow(1);
+  tok.merges().forEach(function(m, i){
+    var row = table.insertRow();
+    row.insertCell().textContent = i;
+    var pa = tok.tokenOf(m.pair[0]).text, pb = tok.tokenOf(m.pair[1]).text;
+    row.insertCell().textContent = "(" + m.pair[0] + " '" + esc(pa) + "', " + m.pair[1] + " '" + esc(pb) + "')";
+    row.insertCell().textContent = m.id;
+    row.insertCell().textContent = "'" + esc(tok.tokenOf(m.id).text) + "'";
+  });
+}
+function renderChunks(){
+  var line = el("chunkline");
+  var text = el("text").value;
+  if (typeof tok.chunks !== "function") {          // the Basic tokenizer has no pre-split
+    line.textContent = "no pre-split — the Basic tokenizer treats the whole text as one chunk";
+    return;
+  }
+  var parts = tok.chunks(text).map(function(c){ return "'" + esc(c) + "'"; });
+  line.textContent = "GPT-2 split → [" + parts.join(", ") + "]  (merges never cross these boundaries)";
+}
+function renderEncoding(){
+  var text = el("text").value;
+  var chips = el("chips");
+  chips.innerHTML = "";
+  renderChunks();
+  var ids;
+  try { ids = tok.encode(text); } catch (e) { el("encline").innerHTML = '<span class="err">' + e.message + "</span>"; return; }
+  ids.forEach(function(id, i){
+    var c = document.createElement("span");
+    c.className = "c" + (i % 4);
+    c.textContent = esc(tok.tokenOf(id).text) + " ·" + id;
+    chips.appendChild(c);
+  });
+  var s = tok.stats(text);
+  var roundtrip = tok.decode(ids) === text;
+  el("encline").innerHTML = s.tokens + " token(s) · " + s.bytes + " byte(s) · ratio " + s.ratio +
+    " · decode(encode(x)) === x: " + (roundtrip ? '<span class="ok">✓</span>' : '<span class="err">✗</span>');
+}
+function updatePatline(){
+  el("patline").textContent = (variant === "regex")
+    ? "split pattern (GPT-2, minbpe): " + esc(tok.pattern ? tok.pattern() : "")
+    : "no pre-split — bytes merge freely across the whole text";
+}
+function syncRadios(){
+  var r = document.querySelector('input[name="variant"][value="' + variant + '"]');
+  if (r) r.checked = true;
+}
+function refresh(){ renderMerges(); renderEncoding(); updatePatline(); }
+
+// switching variant is a fresh tokenizer — the two algorithms are not interchangeable, and neither trains twice
+function applyVariant(v){
+  variant = v;
+  tok = makeTokenizer();
+  trained = false;
+  el("trainline").textContent = "untrained — encode() is plain UTF-8 bytes until you train";
+  el("ioline").textContent = "";
+  refresh();
+}
+Array.prototype.forEach.call(document.querySelectorAll('input[name="variant"]'), function(radio){
+  radio.addEventListener("change", function(){ if (radio.checked) applyVariant(radio.value); });
+});
+
+el("train").addEventListener("click", function(){
+  try {
+    var out = tok.train(el("corpus").value, parseInt(el("vsize").value, 10));
+    trained = true;
+    el("trainline").innerHTML = '<span class="ok">trained ✓</span> — learned ' + out.learned + " of " +
+      out.requested + " requested merge(s); vocabulary is now " + out.vocabSize +
+      (out.learned < out.requested ? ' <span class="warn">(the corpus ran out of repetition — honest stop)</span>' : "");
+  } catch (e) {
+    el("trainline").innerHTML = '<span class="err">' + e.message + "</span>";
+  }
+  refresh();
+});
+el("reset").addEventListener("click", function(){
+  tok = makeTokenizer();
+  trained = false;
+  el("trainline").textContent = "untrained — encode() is plain UTF-8 bytes until you train";
+  el("ioline").textContent = "";
+  refresh();
+});
+el("text").addEventListener("input", renderEncoding);
+el("exportBtn").addEventListener("click", function(){
+  el("io").value = tok.snapshot();
+  var file = (variant === "regex") ? "core/tokenizer-regex.js" : "core/tokenizer.js";
+  el("ioline").textContent = "exported the " + variant + " tokenizer — " + tok.merges().length + " merge(s); paste this anywhere " + file + " lives and load() it";
+});
+el("importBtn").addEventListener("click", function(){
+  try {
+    tok = loadTokenizer(el("io").value);      // auto-detects Basic vs Regex from the snapshot
+    trained = true;
+    syncRadios();
+    el("trainline").innerHTML = '<span class="ok">imported ✓</span> — ' + variant + ' tokenizer, vocabulary ' + tok.vocabSize();
+    el("ioline").textContent = "loaded " + tok.merges().length + " merge(s) as the " + variant + " variant";
+  } catch (e) {
+    el("ioline").innerHTML = '<span class="err">' + e.message + "</span>";
+  }
+  refresh();
+});
+
+refresh();
+</script>
+</body>
+</html>

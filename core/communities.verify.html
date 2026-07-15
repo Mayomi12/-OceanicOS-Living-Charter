@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Communities</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .topic{color:#38bdf8}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Communities</b> (build 0040, Stage 5 · Collaboration). Open groups gathered around a topic. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — communities by popularity</h2>
+<table id="comms"><tr><th>Community</th><th>Topic</th><th>Members</th><th>Spaces</th></tr></table>
+<div class="note">Anyone registered may join or leave freely; communities are discovered by topic and listed by popularity. Belonging is not authority — the Charter is unchanged.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="identity.js"></script>
+<script src="workspaces.js"></script>
+<script src="communities.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function fresh(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "comm-test" });
+  var I = OceanicCore.createIdentity({ oceanic: os });
+  ["Kai","Nav","Hand","Cook"].forEach(function(n){ I.register({ name: n, role: "observer" }); });
+  var W = OceanicCore.createWorkspaces({ oceanic: os, identity: I });
+  var C = OceanicCore.createCommunities({ oceanic: os, identity: I, workspaces: W });
+  return { os: os, I: I, W: W, C: C };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Communities (build 0040)" });
+
+suite.test("factory requires an OceanicOS/Memory; bad identity/workspaces refused", function(a){
+  a.equal(typeof OceanicCore.createCommunities, "function");
+  a.throws(function(){ OceanicCore.createCommunities({}); });
+  a.throws(function(){ OceanicCore.createCommunities({ oceanic: fresh().os, identity: {} }); });
+  a.throws(function(){ OceanicCore.createCommunities({ oceanic: fresh().os, workspaces: {} }); });
+  var C = fresh().C;
+  ["open","join","leave","addSpace","removeSpace","archive","get","has","list","members","spaces","byMember","byTopic","status"].forEach(function(fn){
+    a.equal(typeof C[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("open() creates an active community with a lowercased topic", function(a){
+  var C = fresh().C;
+  var c = C.open({ name: "Tide Watchers", topic: "Tides", purpose: "study the tides" });
+  a.equal(c.id, "tide-watchers");
+  a.equal(c.topic, "tides", "topic normalised");
+  a.equal(c.status, "active");
+  a.deepEqual(c.members, []);
+  a.throws(function(){ C.open({}); }, "needs a name");
+  a.throws(function(){ C.open({ name: "Tide Watchers" }); }, "duplicate id");
+});
+
+suite.test("join() is open self-service, validated and idempotent", function(a){
+  var f = fresh();
+  f.C.open({ name: "Tides" });
+  f.C.join("tides", "kai");
+  f.C.join("tides", "kai");   // idempotent
+  f.C.join("tides", "nav");
+  a.deepEqual(f.C.members("tides"), ["kai", "nav"]);
+  a.throws(function(){ f.C.join("tides", "ghost"); }, "must be a registered actor");
+});
+
+suite.test("leave() is open; leaving a non-member is refused", function(a){
+  var f = fresh();
+  f.C.open({ name: "Tides" });
+  f.C.join("tides", "kai"); f.C.join("tides", "nav");
+  f.C.leave("tides", "nav");
+  a.deepEqual(f.C.members("tides"), ["kai"]);
+  a.throws(function(){ f.C.leave("tides", "cook"); }, "not a member");
+});
+
+suite.test("byTopic() finds communities by interest, case-insensitively", function(a){
+  var C = fresh().C;
+  C.open({ name: "Tide Watchers", topic: "Tides" });
+  C.open({ name: "Deep Tides", topic: "tides" });
+  C.open({ name: "Star Charts", topic: "astronomy" });
+  a.deepEqual(C.byTopic("TIDES").map(function(c){ return c.id; }).sort(), ["deep-tides", "tide-watchers"]);
+  a.deepEqual(C.byTopic("astronomy").map(function(c){ return c.id; }), ["star-charts"]);
+  a.deepEqual(C.byTopic("nothing"), []);
+});
+
+suite.test("byMember() lists the communities an actor has joined", function(a){
+  var C = fresh().C;
+  C.open({ name: "A" }); C.join("a", "kai");
+  C.open({ name: "B" }); C.join("b", "kai"); C.join("b", "nav");
+  a.deepEqual(C.byMember("kai").map(function(c){ return c.id; }).sort(), ["a", "b"]);
+  a.deepEqual(C.byMember("nav").map(function(c){ return c.id; }), ["b"]);
+  a.deepEqual(C.byMember("cook"), []);
+});
+
+suite.test("list() ranks communities by popularity (member count)", function(a){
+  var C = fresh().C;
+  C.open({ name: "Big" }); C.join("big", "kai"); C.join("big", "nav"); C.join("big", "hand");
+  C.open({ name: "Small" }); C.join("small", "cook");
+  var ids = C.list().map(function(c){ return c.id; });
+  a.equal(ids[0], "big", "most members first");
+  a.equal(ids[1], "small");
+});
+
+suite.test("addSpace() adopts shared workspaces, validated against Workspaces", function(a){
+  var f = fresh();
+  f.C.open({ name: "Tides" });
+  f.W.create({ name: "Tidal Atlas" });
+  f.C.addSpace("tides", "tidal-atlas");
+  a.deepEqual(f.C.spaces("tides"), ["tidal-atlas"]);
+  a.throws(function(){ f.C.addSpace("tides", "ghost-ws"); }, "no such workspace");
+  f.C.removeSpace("tides", "tidal-atlas");
+  a.deepEqual(f.C.spaces("tides"), []);
+});
+
+suite.test("archive() is terminal and hides the community from discovery", function(a){
+  var C = fresh().C;
+  C.open({ name: "Deep Tides", topic: "tides" }); C.join("deep-tides", "kai");
+  a.equal(C.archive("deep-tides").status, "archived");
+  a.equal(C.has("deep-tides"), false);
+  a.deepEqual(C.byTopic("tides"), [], "no longer discoverable");
+  a.throws(function(){ C.join("deep-tides", "nav"); }, "cannot join an archived community");
+  a.throws(function(){ C.archive("deep-tides"); }, "already archived");
+  a.equal(C.list().length, 0);
+  a.equal(C.list(true).length, 1);
+});
+
+suite.test("communities are append-only in the Memory Ocean", function(a){
+  var f = fresh();
+  f.C.open({ name: "Tides" });   // 1
+  f.C.join("tides", "kai");       // +1
+  f.C.leave("tides", "kai");      // +1
+  a.equal(f.os.memory.recall({ type: "community" }).length, 1, "one current community");
+  a.equal(f.os.memory.recall({ type: "community", includeSuperseded: true }).length, 3, "every version kept");
+});
+
+suite.test("status() summarises communities, members and distinct topics", function(a){
+  var C = fresh().C;
+  C.open({ name: "A", topic: "tides" }); C.join("a", "kai"); C.join("a", "nav");
+  C.open({ name: "B", topic: "astronomy" });
+  C.open({ name: "C" }); C.archive("c");
+  a.deepEqual(C.status(), { communities: 2, archived: 1, members: 2, topics: 2 });
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Communities";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = fresh();
+  f.W.create({ name: "Tidal Atlas" });
+  f.C.open({ name: "Tide Watchers", topic: "tides" });
+  ["kai","nav","hand"].forEach(function(a){ f.C.join("tide-watchers", a); });
+  f.C.addSpace("tide-watchers", "tidal-atlas");
+  f.C.open({ name: "Star Charts", topic: "astronomy" }); f.C.join("star-charts", "cook");
+  var table = document.getElementById("comms");
+  f.C.list().forEach(function(c){
+    var row = table.insertRow();
+    row.insertCell().textContent = c.name;
+    var t = row.insertCell(); t.textContent = c.topic || "—"; t.className = "topic";
+    row.insertCell().textContent = c.members.map(function(a){ return f.I.get(a).name; }).join(", ") || "—";
+    row.insertCell().textContent = c.spaces.join(", ") || "—";
+  });
+})();
+</script>
+</body>
+</html>

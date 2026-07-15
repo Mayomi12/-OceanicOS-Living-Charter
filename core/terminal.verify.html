@@ -15,9 +15,9 @@
 </head>
 <body>
 <h1>Ω∞ OceanicOS :: Core Verification</h1>
-<div class="sub">Capability under test: <b>Terminal</b> (build 0026, Stage 3 · Applications). The keyboard-native application — the CLI (0012) at full screen, with verifiable history recall, tab completion, and scrollback. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div class="sub">Capability under test: <b>Terminal</b> (build 0023, Stage 3 · Applications). A REPL controller — scrollback, history navigation, Tab completion. Suite runs on the <b>Verification Engine</b> (0004).</div>
 <div id="suite"></div>
-<div class="note">The Terminal application itself is <a href="terminal.html" style="color:#38bdf8">terminal.html</a> — this page verifies its logic.</div>
+<div class="note">The full-screen Terminal app is <a href="terminal.html" style="color:#38bdf8">terminal.html</a> — this page verifies its logic.</div>
 
 <script src="verify-engine.js"></script>
 <script src="heartbeat.js"></script>
@@ -28,146 +28,120 @@
 <script src="projects-engine.js"></script>
 <script src="build-registry.js"></script>
 <script src="oceanic.js"></script>
-<script src="api.js"></script>
 <script src="cli.js"></script>
-<script src="logger.js"></script>
 <script src="terminal.js"></script>
 <script>
 "use strict";
 var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
-function newTerminal(){ return OceanicCore.createTerminal({ oceanic: OceanicCore.createOceanic({ now: clock, manual: true, name: "terminal-test" }), now: clock }); }
+function newTerm(){ return OceanicCore.createTerminal({ cli: OceanicCore.createCLI({ oceanic: OceanicCore.createOceanic({ now: clock, manual: true, name: "term-test" }) }) }); }
 
-var suite = OceanicCore.createVerifier({ name: "Terminal (build 0026)" });
+var suite = OceanicCore.createVerifier({ name: "Terminal (build 0023)" });
 
-suite.test("createTerminal requires an assembled system and its dependency factories", function(a){
+suite.test("factory requires a CLI or an assembled system; publishes BUILTINS", function(a){
   a.equal(typeof OceanicCore.createTerminal, "function");
-  a.throws(function(){ OceanicCore.createTerminal(); }, "no oceanic");
-  a.throws(function(){ OceanicCore.createTerminal({ oceanic: OceanicCore.createOceanic({ manual:true }), deps: {} }); }, "empty deps");
-  var t = newTerminal();
-  ["boot","run","recall","complete","clear","scrollback","history","verbs","status","help"].forEach(function(fn){
+  a.throws(function(){ OceanicCore.createTerminal({}); }, "nothing to wrap");
+  a.throws(function(){ OceanicCore.createTerminal({ cli: {} }); }, "not a CLI");
+  a.deepEqual(OceanicCore.createTerminal.BUILTINS, ["clear","history"]);
+  var t = newTerm();
+  ["submit","historyPrev","historyNext","complete","vocabulary","scrollback","history","status"].forEach(function(fn){
     a.equal(typeof t[fn], "function", "exposes " + fn);
   });
 });
 
-suite.test("a fresh terminal is not booted; empty scrollback and history", function(a){
-  var t = newTerminal();
-  a.equal(t.status().booted, false);
-  a.deepEqual(t.scrollback(), []);
-  a.deepEqual(t.history(), []);
-});
-
-suite.test("boot() boots the system, banners the scrollback, logs — and is idempotent", function(a){
-  var t = newTerminal();
-  var s = t.boot();
-  a.equal(s.booted, true);
-  a.equal(t.scrollback().length, 1, "one banner line");
-  a.equal(t.scrollback()[0].kind, "sys");
-  a.ok(t.scrollback()[0].text.indexOf("pulse 1") >= 0);
-  t.boot();
-  a.equal(t.scrollback().length, 1, "second boot adds nothing");
-  a.equal(t.oceanic.status().pulse, 1, "and beats no second pulse");
-});
-
-suite.test("run() executes through the CLI; scrollback gains cmd+out; history grows", function(a){
-  var t = newTerminal(); t.boot();
-  var r = t.run("observe the tide is rising");
+suite.test("submit() records the input and the command's output in the scrollback", function(a){
+  var t = newTerm();
+  var r = t.submit("start");
   a.equal(r.ok, true);
-  a.ok(r.output.indexOf("observed") >= 0);
   var sb = t.scrollback();
-  a.equal(sb[sb.length - 2].kind, "cmd");
-  a.ok(sb[sb.length - 2].text.indexOf("oceanic> observe") >= 0);
-  a.equal(sb[sb.length - 1].kind, "out");
-  a.deepEqual(t.history(), ["observe the tide is rising"]);
-  a.equal(t.oceanic.status().memory.count, 1, "the drop is in the ocean");
+  a.equal(sb[0].type, "in");
+  a.ok(sb[0].text.indexOf("start") >= 0);
+  a.equal(sb[sb.length - 1].type, "out");
+  a.ok(sb[sb.length - 1].text.indexOf("booted") >= 0);
 });
 
-suite.test("an unknown command is reported as an err line (ok:false) — and never throws", function(a){
-  var t = newTerminal(); t.boot();
-  var r = t.run("frobnicate the mainsail");
+suite.test("a failed command writes an error line and never throws", function(a){
+  var t = newTerm();
+  var r = t.submit("frobnicate the sail");
   a.equal(r.ok, false);
-  a.ok(r.error.indexOf("unknown command") >= 0);
   var last = t.scrollback()[t.scrollback().length - 1];
-  a.equal(last.kind, "err");
-  a.deepEqual(t.history(), ["frobnicate the mainsail"], "failed commands are still recallable");
+  a.equal(last.type, "err");
+  a.ok(last.text.indexOf("unknown command") >= 0);
 });
 
-suite.test("recall() walks history like readline: clamped at the oldest, empty past the newest", function(a){
-  var t = newTerminal(); t.boot();
-  a.equal(t.recall("up"), "", "empty history recalls nothing");
-  t.run("status");
-  t.run("help");
-  t.run("help");                                        // consecutive duplicate
-  a.deepEqual(t.history(), ["status", "help"], "consecutive duplicates stored once");
-  a.equal(t.recall("up"), "help");
-  a.equal(t.recall("up"), "status");
-  a.equal(t.recall("up"), "status", "clamped at the oldest");
-  a.equal(t.recall("down"), "help");
-  a.equal(t.recall("down"), "", "past the newest = fresh prompt");
-  a.equal(t.recall("up"), "help", "recall restarts from the newest");
-  t.run("builds");
-  a.equal(t.recall("up"), "builds", "a run resets the cursor");
+suite.test("blank submissions are no-ops", function(a){
+  var t = newTerm();
+  var r = t.submit("   ");
+  a.equal(r.blank, true);
+  a.equal(t.scrollback().length, 0);
+  a.equal(t.history().length, 0);
 });
 
-suite.test("complete(): unique prefix completes to 'verb '; ambiguity extends to the shared prefix; no match is empty", function(a){
-  var t = newTerminal(); t.boot();
-  var one = t.complete("lear");
-  a.deepEqual(one.matches, ["learn"]);
-  a.equal(one.completion, "learn ", "unique match completes with a trailing space");
-  var many = t.complete("de");
-  a.deepEqual(many.matches, ["decide", "decisions"]);
-  a.equal(many.completion, "deci", "extends to the shared prefix");
-  var none = t.complete("xyz");
-  a.deepEqual(none.matches, []);
-  a.equal(none.completion, "xyz", "no match leaves the input alone");
+suite.test("history records submitted commands in order", function(a){
+  var t = newTerm();
+  t.submit("start"); t.submit("status"); t.submit("help");
+  a.deepEqual(t.history(), ["start","status","help"]);
 });
 
-suite.test("the completion verbs are exactly the CLI's real commands", function(a){
-  var t = newTerminal(); t.boot();
-  a.deepEqual(t.complete("").matches, t.cli.commands, "complete('') offers every verb");
-  a.deepEqual(t.verbs(), t.cli.commands);
-  a.ok(t.verbs().length >= 15);
-  a.equal(t.help().length, t.verbs().length, "help lines match the verbs");
+suite.test("historyPrev/historyNext walk the history shell-style", function(a){
+  var t = newTerm();
+  t.submit("a1"); t.submit("b2"); t.submit("c3"); // (all unknown commands, but recorded)
+  a.equal(t.historyPrev(), "c3", "first prev = newest");
+  a.equal(t.historyPrev(), "b2");
+  a.equal(t.historyPrev(), "a1");
+  a.equal(t.historyPrev(), "a1", "clamps at the oldest");
+  a.equal(t.historyNext(), "b2");
+  a.equal(t.historyNext(), "c3");
+  a.equal(t.historyNext(), "", "past the newest is an empty line");
 });
 
-suite.test("clear() clears the VIEW only — the ocean keeps every record", function(a){
-  var t = newTerminal(); t.boot();
-  t.run("observe first");
-  t.run("observe second");
-  var before = t.oceanic.status().memory.count;
-  a.ok(t.scrollback().length >= 5);
-  t.clear();
-  a.equal(t.scrollback().length, 1, "one sys line remains");
-  a.ok(t.scrollback()[0].text.indexOf("the ocean remembers") >= 0);
-  a.equal(t.oceanic.status().memory.count, before, "no record was erased");
-  a.deepEqual(t.history().length, 2, "history survives a clear");
+suite.test("submitting resets the history cursor to the end", function(a){
+  var t = newTerm();
+  t.submit("one"); t.submit("two");
+  t.historyPrev(); t.historyPrev();      // walked back to "one"
+  t.submit("three");                      // new submit resets
+  a.equal(t.historyPrev(), "three", "prev after a submit starts from the newest again");
 });
 
-suite.test("verification before acceptance still holds when driven from the Terminal", function(a){
-  var t = newTerminal(); t.boot();
-  var oid = t.run("observe unconfirmed swell").output.split(" ")[1];
-  var did = t.run("propose act? | a | b").output.split(" ")[1];
-  // ground the decision on the pending observation via the engine, then decide from the terminal
-  var t2 = newTerminal(); t2.boot();
-  var o2 = t2.run("observe unconfirmed swell").output.split(" ")[1];
-  var d2 = t2.oceanic.decisions.propose({ question: "act?", options: ["a","b"], grounds: [o2] }).meta.did;
-  var refused = t2.run("decide " + d2 + " a");
-  a.equal(refused.ok, false); a.ok(refused.error.indexOf("not verified") >= 0);
-  a.equal(t2.run("verify " + o2).ok, true);
-  a.equal(t2.run("decide " + d2 + " a").ok, true, "permitted once reality is verified");
-  a.ok(oid && did, "the first terminal drove its own ocean untouched");
+suite.test("complete() offers unique, common-prefix, and empty completions", function(a){
+  var t = newTerm();
+  a.deepEqual(t.complete("veri"), { matches: ["verify"], value: "verify" }, "unique completion");
+  var o = t.complete("o");
+  a.deepEqual(o.matches, ["observations","observe"], "multiple matches");
+  a.equal(o.value, "observ", "value is the common prefix");
+  a.deepEqual(t.complete("zzz"), { matches: [], value: "zzz" }, "no match leaves input as-is");
 });
 
-suite.test("scrollback() and history() return copies; status() is consistent", function(a){
-  var t = newTerminal(); t.boot();
-  t.run("status");
-  var sb = t.scrollback(); sb.push({ forged: true });
-  var h = t.history(); h.push("forged");
-  a.equal(t.scrollback().length, 3, "banner + cmd + out — the forgery bounced");
-  a.equal(t.history().length, 1);
-  var s = t.status();
-  a.equal(s.commands, 1);
-  a.equal(s.history, 1);
-  a.equal(s.scrollback, 3);
+suite.test("completion includes the terminal built-ins", function(a){
+  var t = newTerm();
+  a.deepEqual(t.complete("cl"), { matches: ["clear"], value: "clear" });
+  a.ok(t.vocabulary().indexOf("history") >= 0 && t.vocabulary().indexOf("clear") >= 0);
+});
+
+suite.test("the clear built-in empties the scrollback (but keeps history)", function(a){
+  var t = newTerm();
+  t.submit("start"); t.submit("status");
+  a.ok(t.scrollback().length > 0);
+  t.submit("clear");
+  a.equal(t.scrollback().length, 0, "screen cleared");
+  a.equal(t.history().length, 3, "clear is itself remembered in history");
+});
+
+suite.test("the history built-in prints past commands", function(a){
+  var t = newTerm();
+  t.submit("start"); t.submit("status");
+  var r = t.submit("history");
+  a.deepEqual(r.data, ["start","status","history"]);
+  var printed = t.scrollback().filter(function(l){ return l.type === "out"; });
+  a.ok(printed.length >= 3, "each past command printed");
+});
+
+suite.test("real commands still drive the system through the terminal", function(a){
+  var t = newTerm();
+  t.submit("start");
+  var r = t.submit("observe the north channel shoals");
+  var oid = r.message.split(" ")[1];
+  a.equal(t.submit("verify " + oid).ok, true);
+  a.ok(t.submit("status").message.indexOf("reality 1") >= 0, "the observation was verified via the terminal");
 });
 
 /* ---- render the suite THROUGH the Verification Engine ---- */

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Planning</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .p1{color:#fb7185} .p2{color:#fbbf24} .p3{color:#38bdf8}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Planning</b> (build 0029, Stage 4 · Intelligence). Turns the Reasoner's diagnosis into a prioritised to-do list. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — the steward's ordered plan</h2>
+<table id="plan"><tr><th>#</th><th>Priority</th><th>Action</th><th>Target</th><th>Why</th></tr></table>
+<div class="note">Everything most in need of attention rises to the top; the plan writes nothing — it only says, in order, what to do and why.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="reason.js"></script>
+<script src="plan.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+
+function troubled(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "plan-test" });
+  os.start();
+  // SOUND (no step): verified ground, still verified
+  var oV = os.reality.observe({ observation: "verified reef" }); os.reality.verify(oV.meta.oid);
+  os.decisions.decide(os.decisions.propose({ question: "reroute?", options: ["y","n"], grounds: [oV.meta.oid] }).meta.did, "y");
+  // UNSOUND -> revisit (p1): ground rejected after use
+  var oR = os.reality.observe({ observation: "disputed rock" }); os.reality.verify(oR.meta.oid);
+  var kU = os.knowledge.learn({ statement: "the rock exists", grounds: [oR.meta.oid] });
+  os.reality.reject(oR.meta.oid, "a shadow");
+  // BROKEN -> reground (p1): cites a missing observation
+  var kB = os.knowledge.learn({ statement: "rests on a missing sounding", grounds: ["o-missing"] });
+  // PROVISIONAL -> reconfirm (p2): ground archived after use
+  var oA = os.reality.observe({ observation: "tentative shoal" }); os.reality.verify(oA.meta.oid);
+  var dP = os.decisions.propose({ question: "slow down?", options: ["y","n"], grounds: [oA.meta.oid] }); os.decisions.decide(dP.meta.did, "y");
+  os.reality.archive(oA.meta.oid);
+  // two standalone PENDING observations -> verify-or-reject (p3)
+  var p1 = os.reality.observe({ observation: "aaa pending sounding" });
+  var p2 = os.reality.observe({ observation: "bbb pending sounding" });
+  return { os: os, kU: kU.meta.kid, kB: kB.meta.kid, dP: dP.meta.did, p1: p1.meta.oid, p2: p2.meta.oid };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Planning (build 0029)" });
+
+suite.test("factory requires an assembled OceanicOS and a Reasoner", function(a){
+  a.equal(typeof OceanicCore.createPlanner, "function");
+  a.throws(function(){ OceanicCore.createPlanner({}); });
+  var P = OceanicCore.createPlanner({ oceanic: troubled().os });
+  a.equal(typeof P.plan, "function");
+  a.equal(typeof P.next, "function");
+});
+
+suite.test("a healthy ocean yields a CLEAR plan", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  os.start();
+  var o = os.reality.observe({ observation: "clean" }); os.reality.verify(o.meta.oid);
+  os.knowledge.learn({ statement: "clean knowledge", grounds: [o.meta.oid] });
+  var P = OceanicCore.createPlanner({ oceanic: os });
+  var plan = P.plan();
+  a.equal(plan.clear, true);
+  a.equal(plan.total, 0);
+  a.equal(P.next(), null);
+});
+
+suite.test("an unsound record becomes a priority-1 'revisit' step", function(a){
+  var f = troubled();
+  var steps = OceanicCore.createPlanner({ oceanic: f.os }).plan().steps;
+  var revisit = steps.filter(function(s){ return s.action === "revisit"; });
+  a.equal(revisit.length, 1);
+  a.equal(revisit[0].priority, 1);
+  a.equal(revisit[0].target, f.kU, "targets the unsound knowledge");
+});
+
+suite.test("a broken record becomes a priority-1 'reground' step", function(a){
+  var f = troubled();
+  var steps = OceanicCore.createPlanner({ oceanic: f.os }).plan().steps;
+  var reground = steps.filter(function(s){ return s.action === "reground"; });
+  a.equal(reground.length, 1);
+  a.equal(reground[0].priority, 1);
+  a.equal(reground[0].target, f.kB);
+});
+
+suite.test("a provisional record (archived ground) becomes a priority-2 'reconfirm' step", function(a){
+  var f = troubled();
+  var steps = OceanicCore.createPlanner({ oceanic: f.os }).plan().steps;
+  var rc = steps.filter(function(s){ return s.action === "reconfirm"; });
+  a.equal(rc.length, 1);
+  a.equal(rc[0].priority, 2);
+  a.equal(rc[0].target, f.dP);
+});
+
+suite.test("standalone pending observations become priority-3 'verify-or-reject' steps", function(a){
+  var f = troubled();
+  var steps = OceanicCore.createPlanner({ oceanic: f.os }).plan().steps;
+  var vr = steps.filter(function(s){ return s.action === "verify-or-reject"; });
+  a.equal(vr.length, 2, "both pending observations");
+  vr.forEach(function(s){ a.equal(s.priority, 3); a.equal(s.targetType, "observation"); });
+});
+
+suite.test("the plan is ordered most-urgent first and numbered", function(a){
+  var f = troubled();
+  var steps = OceanicCore.createPlanner({ oceanic: f.os }).plan().steps;
+  var priorities = steps.map(function(s){ return s.priority; });
+  var sorted = priorities.slice().sort();
+  a.deepEqual(priorities, sorted, "non-decreasing priority");
+  a.equal(priorities[0], 1, "a priority-1 item leads");
+  steps.forEach(function(s, i){ a.equal(s.order, i + 1, "steps are numbered in order"); });
+});
+
+suite.test("within a priority, steps are ordered stably by target", function(a){
+  var f = troubled();
+  var steps = OceanicCore.createPlanner({ oceanic: f.os }).plan().steps;
+  var p3 = steps.filter(function(s){ return s.priority === 3; }).map(function(s){ return s.target; });
+  a.deepEqual(p3, [f.p1, f.p2], "the 'aaa' sounding is planned before the 'bbb' one");
+});
+
+suite.test("plan() summarises counts by action", function(a){
+  var f = troubled();
+  var plan = OceanicCore.createPlanner({ oceanic: f.os }).plan();
+  a.equal(plan.total, 5);
+  a.deepEqual(plan.byAction, { revisit: 1, reground: 1, reconfirm: 1, "verify-or-reject": 2 });
+  a.equal(plan.clear, false);
+});
+
+suite.test("next() returns the single most urgent step", function(a){
+  var f = troubled();
+  var n = OceanicCore.createPlanner({ oceanic: f.os }).next();
+  a.equal(n.priority, 1, "the first thing to do is a priority-1 fix");
+  a.ok(n.action === "revisit" || n.action === "reground");
+});
+
+suite.test("planning is pure — building a plan changes nothing in the ocean", function(a){
+  var f = troubled();
+  var before = f.os.status().memory.count;
+  var P = OceanicCore.createPlanner({ oceanic: f.os });
+  P.plan(); P.next(); P.plan();
+  a.equal(f.os.status().memory.count, before, "no records written");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Planning";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var P = OceanicCore.createPlanner({ oceanic: troubled().os });
+  var table = document.getElementById("plan");
+  P.plan().steps.forEach(function(s){
+    var row = table.insertRow();
+    row.insertCell().textContent = String(s.order);
+    var pc = row.insertCell(); pc.textContent = "P" + s.priority; pc.className = "p" + s.priority;
+    row.insertCell().textContent = s.action;
+    row.insertCell().textContent = s.targetType + " " + String(s.target).slice(0, 10);
+    row.insertCell().textContent = s.reason;
+  });
+})();
+</script>
+</body>
+</html>

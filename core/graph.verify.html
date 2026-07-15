@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Knowledge Graph</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  pre{background:#061a26;border:1px solid #12455f;border-radius:6px;padding:12px;font-size:12px;overflow:auto}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Knowledge Graph</b> (build 0027, Stage 4 · Intelligence). The relationships already in the ocean, made traversable. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — the graph derived from a small ocean (Graphviz DOT)</h2>
+<pre id="dot">running…</pre>
+<div class="note">Every edge was read from the records themselves: a decision and a piece of knowledge grounded on the same observation, all gathered by a project.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="graph.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function seeded(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "graph-test" });
+  os.start();
+  var o1 = os.reality.observe({ observation: "north channel shoals" }); os.reality.verify(o1.meta.oid);
+  var o2 = os.reality.observe({ observation: "south channel deep" });
+  var d1 = os.decisions.propose({ question: "reroute?", options: ["yes","no"], grounds: [o1.meta.oid] }); os.decisions.decide(d1.meta.did, "yes");
+  var k1 = os.knowledge.learn({ statement: "channel unsafe at low tide", topics: ["tides"], grounds: [o1.meta.oid] });
+  var p1 = os.projects.open({ name: "Winter routing" });
+  os.projects.link(p1.meta.pid, { kind: "observation", id: o1.meta.oid });
+  os.projects.link(p1.meta.pid, { kind: "decision", id: d1.meta.did });
+  os.projects.link(p1.meta.pid, { kind: "knowledge", id: k1.meta.kid });
+  os.projects.link(p1.meta.pid, { kind: "note", id: "just a note, not a node" });
+  return { os: os, o1: o1.meta.oid, o2: o2.meta.oid, d1: d1.meta.did, k1: k1.meta.kid, p1: p1.meta.pid };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Knowledge Graph (build 0027)" });
+
+suite.test("factory requires an OceanicOS or a Memory", function(a){
+  a.equal(typeof OceanicCore.createGraph, "function");
+  a.throws(function(){ OceanicCore.createGraph({}); });
+  var g = OceanicCore.createGraph({ oceanic: seeded().os });
+  ["nodes","edges","node","has","out","in","edgesOf","neighbors","component","stats","toDOT"].forEach(function(fn){
+    a.equal(typeof g[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("every current record becomes a node with its type and logical id", function(a){
+  var f = seeded();
+  var g = OceanicCore.createGraph({ oceanic: f.os });
+  a.equal(g.nodes().length, 5, "2 obs + 1 decision + 1 knowledge + 1 project");
+  a.equal(g.has(f.o1), true);
+  a.equal(g.node(f.d1).type, "decision");
+  a.deepEqual(g.stats().byType, { observation: 2, decision: 1, knowledge: 1, project: 1 });
+});
+
+suite.test("grounding relationships become edges (decision/knowledge --grounds--> observation)", function(a){
+  var f = seeded();
+  var g = OceanicCore.createGraph({ oceanic: f.os });
+  var grounds = g.edges().filter(function(e){ return e.rel === "grounds"; });
+  a.equal(grounds.length, 2, "the decision and the knowledge each ground on o1");
+  grounds.forEach(function(e){ a.equal(e.to, f.o1, "both point at the observation"); });
+});
+
+suite.test("project links become typed edges", function(a){
+  var f = seeded();
+  var g = OceanicCore.createGraph({ oceanic: f.os });
+  var links = g.edges().filter(function(e){ return e.from === f.p1; });
+  a.equal(links.length, 3, "observation + decision + knowledge (the note is skipped)");
+  var rels = links.map(function(e){ return e.rel; }).sort();
+  a.deepEqual(rels, ["links:decision","links:knowledge","links:observation"]);
+});
+
+suite.test("edges never dangle — a link to a non-node (a note) is dropped", function(a){
+  var f = seeded();
+  var g = OceanicCore.createGraph({ oceanic: f.os });
+  a.equal(g.edges().filter(function(e){ return e.rel === "links:note"; }).length, 0);
+});
+
+suite.test("in(id) answers 'what rests on this observation?'", function(a){
+  var f = seeded();
+  var g = OceanicCore.createGraph({ oceanic: f.os });
+  var supporters = g.in(f.o1).map(function(e){ return e.from; }).sort();
+  a.deepEqual(supporters, [f.d1, f.k1, f.p1].sort(), "the decision, the knowledge, and the project all rest on o1");
+  a.equal(g.out(f.o1).length, 0, "an observation grounds nothing itself");
+});
+
+suite.test("neighbors() gives the undirected connections", function(a){
+  var f = seeded();
+  var g = OceanicCore.createGraph({ oceanic: f.os });
+  a.equal(g.neighbors(f.o1).length, 3, "o1 touches decision, knowledge, project");
+  a.equal(g.neighbors(f.p1).length, 3, "project touches its three real links");
+});
+
+suite.test("component() returns the connected cluster; isolated nodes stand alone", function(a){
+  var f = seeded();
+  var g = OceanicCore.createGraph({ oceanic: f.os });
+  var comp = g.component(f.p1).sort();
+  a.deepEqual(comp, [f.d1, f.k1, f.o1, f.p1].sort(), "project + observation + decision + knowledge form one cluster");
+  a.deepEqual(g.component(f.o2), [f.o2], "the uncited observation is its own component");
+});
+
+suite.test("stats() counts nodes, edges, types and connected components", function(a){
+  var g = OceanicCore.createGraph({ oceanic: seeded().os });
+  var s = g.stats();
+  a.equal(s.nodes, 5);
+  a.equal(s.edges, 5);
+  a.equal(s.components, 2, "one cluster of four + the lone observation");
+});
+
+suite.test("toDOT() emits a valid Graphviz digraph of the whole graph", function(a){
+  var g = OceanicCore.createGraph({ oceanic: seeded().os });
+  var dot = g.toDOT();
+  a.ok(dot.indexOf("digraph OceanicOS") === 0);
+  a.ok(dot.indexOf("-> ") > 0, "contains edges");
+  a.ok(dot.trim().slice(-1) === "}", "well-formed");
+});
+
+suite.test("the graph is DERIVED from the current ocean — superseded records are not nodes", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  os.start();
+  var k = os.knowledge.learn({ statement: "v1 belief", topics: ["t"] });
+  os.knowledge.revise(k.meta.kid, { statement: "v2 belief" });
+  var g = OceanicCore.createGraph({ oceanic: os });
+  a.equal(g.nodes().length, 1, "one current knowledge node, not two");
+  a.equal(g.node(k.meta.kid).label, "v2 belief", "reflects the current revision");
+});
+
+suite.test("unknown nodes yield empty traversals, not errors", function(a){
+  var g = OceanicCore.createGraph({ oceanic: seeded().os });
+  a.deepEqual(g.neighbors("ghost"), []);
+  a.deepEqual(g.component("ghost"), []);
+  a.equal(g.node("ghost"), null);
+  a.equal(g.has("ghost"), false);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Knowledge Graph";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+document.getElementById("dot").textContent = OceanicCore.createGraph({ oceanic: seeded().os }).toDOT();
+</script>
+</body>
+</html>

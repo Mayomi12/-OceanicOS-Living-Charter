@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Education</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .hint{color:#fbbf24}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Education</b> (build 0052, Stage 7 · Ecosystem). Learn-by-doing — a lesson advances only when the work actually stands in the learner's REAL ocean; wrong or missing work is refused gently, with a hint. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — a learner walks "The First Drop"</h2>
+<table id="walk"><tr><th>Step</th><th>What the learner did</th><th>Outcome</th></tr></table>
+<div id="walkline" class="note"></div>
+<div class="note">Verification before acceptance, applied to learning itself: you advance by doing, never by clicking "next". Completing a lesson writes evidence into the learner's own ocean, like everything else here.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="education.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+
+var suite = OceanicCore.createVerifier({ name: "Education (build 0052)" });
+
+suite.test("factory boots, exposes the surface, and ships two lessons", function(a){
+  a.equal(typeof OceanicCore.createEducation, "function");
+  var E = OceanicCore.createEducation();
+  ["lessons","registerLesson","enroll"].forEach(function(fn){ a.equal(typeof E[fn], "function", "exposes " + fn); });
+  var ls = E.lessons();
+  a.deepEqual(ls.map(function(l){ return l.id; }), ["first-drop","honest-corrections"]);
+  ls.forEach(function(l){ a.equal(l.steps, 4, l.id + " has 4 steps"); a.ok(l.description.length > 20); });
+});
+
+suite.test("enrolling stands up a real, beating ocean and points at step 1", function(a){
+  var E = OceanicCore.createEducation();
+  var s = E.enroll("first-drop", { now: clock });
+  a.ok(s.oceanic.heartbeat.status().pulse >= 1, "the learner's world is alive");
+  var c = s.current();
+  a.equal(c.step, 1); a.equal(c.total, 4);
+  a.ok(c.instruction.indexOf("observe") >= 0, "the instruction says what to do");
+  a.deepEqual(s.progress(), { step: 0, total: 4, percent: 0, done: false });
+  a.throws(function(){ E.enroll("ghost"); }, "unknown lesson refused");
+});
+
+suite.test("no work → no advance: a gentle hint, never an error", function(a){
+  var E = OceanicCore.createEducation();
+  var s = E.enroll("first-drop", { now: clock });
+  var r = s.attempt();
+  a.equal(r.ok, false);
+  a.equal(r.step, 1, "still on step 1");
+  a.ok(r.hint.length > 10, "a hint, not a stack trace: " + r.hint);
+  a.equal(s.current().step, 1, "the cursor did not move");
+});
+
+suite.test("doing the work advances — the full First Drop, step by honest step", function(a){
+  var E = OceanicCore.createEducation();
+  var s = E.enroll("first-drop", { now: clock });
+  var os = s.oceanic;
+  var o = os.reality.observe({ observation: "the tide turned at six", source: "learner" });
+  a.equal(s.attempt().ok, true, "step 1: observed");
+  os.reality.verify(o.meta.oid);
+  a.equal(s.attempt().ok, true, "step 2: verified");
+  var d = os.decisions.propose({ question: "log the tide?", options: ["yes","no"], grounds: [o.meta.oid] });
+  os.decisions.decide(d.meta.did, "yes");
+  a.equal(s.attempt().ok, true, "step 3: decided");
+  os.knowledge.learn({ statement: "tides here turn near six", topics: ["tides"], grounds: [o.meta.oid] });
+  var last = s.attempt();
+  a.equal(last.ok, true, "step 4: learned");
+  a.equal(last.done, true, "and the lesson is complete");
+  a.equal(s.completed(), true);
+  a.deepEqual(s.progress(), { step: 4, total: 4, percent: 100, done: true });
+});
+
+suite.test("completion leaves evidence in the learner's own ocean", function(a){
+  var E = OceanicCore.createEducation();
+  var s = E.enroll("first-drop", { now: clock });
+  var os = s.oceanic;
+  var o = os.reality.observe({ observation: "x", source: "l" }); s.attempt();
+  os.reality.verify(o.meta.oid); s.attempt();
+  var d = os.decisions.propose({ question: "q?", options: ["a","b"], grounds: [o.meta.oid] });
+  os.decisions.decide(d.meta.did, "a"); s.attempt();
+  os.knowledge.learn({ statement: "s", topics: ["t"], grounds: [o.meta.oid] }); s.attempt();
+  var recs = os.memory.recall({ type: "lesson" });
+  a.equal(recs.length, 1);
+  a.equal(recs[0].meta.lesson, "first-drop");
+  a.equal(recs[0].meta.status, "completed");
+  var again = s.attempt();
+  a.equal(again.ok, false, "a finished lesson refuses further attempts, gently");
+  a.equal(again.done, true);
+});
+
+suite.test("steps cannot be skipped — later work does not satisfy an earlier gate", function(a){
+  var E = OceanicCore.createEducation();
+  var s = E.enroll("first-drop", { now: clock });
+  var os = s.oceanic;
+  // learner races ahead: observes AND leaves it pending, then tries to advance twice
+  os.reality.observe({ observation: "rushed", source: "learner" });
+  a.equal(s.attempt().ok, true, "step 1 passes — there is an observation");
+  a.equal(s.attempt().ok, false, "step 2 refuses — nothing is verified yet");
+  a.equal(s.current().step, 2, "still standing at the verify gate");
+});
+
+suite.test("Honest Corrections: reject openly, correct beside it, prove history survived", function(a){
+  var E = OceanicCore.createEducation();
+  var s = E.enroll("honest-corrections", { now: clock });
+  var os = s.oceanic;
+  var wrong = os.reality.observe({ observation: "the light is out", source: "rumor" });
+  a.equal(s.attempt().ok, true, "observed");
+  os.reality.reject(wrong.meta.oid);
+  a.equal(s.attempt().ok, true, "rejected openly — no delete exists");
+  var right = os.reality.observe({ observation: "the light was relit at dusk", source: "keeper" });
+  os.reality.verify(right.meta.oid);
+  a.equal(s.attempt().ok, true, "the correction stands beside the mistake");
+  var last = s.attempt();
+  a.equal(last.done, true, "and the ocean itself proves nothing was erased");
+  a.ok(os.memory.status().superseded > 0);
+});
+
+suite.test("a contributed lesson joins the catalogue — guarded like everything else", function(a){
+  var E = OceanicCore.createEducation();
+  E.registerLesson({
+    id: "one-beat", title: "One Beat", description: "feel the heartbeat once before anything else",
+    steps: [{ title: "beat", instruction: "call oceanic.beat()", hint: "beat once",
+              check: function(os){ return os.heartbeat.status().pulse >= 2; } }]
+  });
+  a.equal(E.lessons().length, 3);
+  var s = E.enroll("one-beat", { now: clock });
+  a.equal(s.attempt().ok, false, "not yet");
+  s.oceanic.beat();
+  a.equal(s.attempt().done, true, "one beat, lesson done");
+  a.throws(function(){ E.registerLesson({ id: "one-beat", title: "x", description: "duplicate id refused here", steps: [{ instruction: "i", check: function(){} }] }); });
+  a.throws(function(){ E.registerLesson({ id: "bad", title: "x", description: "a step without a check", steps: [{ instruction: "i" }] }); });
+});
+
+suite.test("two learners never share an ocean", function(a){
+  var E = OceanicCore.createEducation();
+  var s1 = E.enroll("first-drop", { now: clock });
+  var s2 = E.enroll("first-drop", { now: clock });
+  s1.oceanic.reality.observe({ observation: "mine alone", source: "one" });
+  a.equal(s1.attempt().ok, true, "learner one advanced");
+  a.equal(s2.attempt().ok, false, "learner two still has empty water");
+  a.equal(s2.oceanic.memory.status().count, 0);
+});
+
+suite.test("a check that throws is a gentle refusal, not a crash", function(a){
+  var E = OceanicCore.createEducation();
+  E.registerLesson({
+    id: "stormy", title: "Stormy", description: "a lesson whose check blows up on inspection",
+    steps: [{ instruction: "survive the storm", hint: "the check itself failed — that is not your fault, and not an advance",
+              check: function(){ throw new Error("squall"); } }]
+  });
+  var s = E.enroll("stormy", { now: clock });
+  var r = s.attempt();
+  a.equal(r.ok, false, "refused, not thrown");
+  a.ok(r.hint.indexOf("not your fault") >= 0 || r.hint.length > 0, "with a hint");
+  a.equal(s.completed(), false);
+});
+
+suite.test("progress arithmetic is honest at every point", function(a){
+  var E = OceanicCore.createEducation();
+  var s = E.enroll("first-drop", { now: clock });
+  a.equal(s.progress().percent, 0);
+  s.oceanic.reality.observe({ observation: "p", source: "l" });
+  s.attempt();
+  a.equal(s.progress().step, 1);
+  a.equal(s.progress().percent, 25);
+  a.equal(s.progress().done, false);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Education";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var E = OceanicCore.createEducation();
+  var s = E.enroll("first-drop", { now: clock });
+  var os = s.oceanic;
+  var table = document.getElementById("walk");
+  function row(step, did, r){
+    var tr = table.insertRow();
+    tr.insertCell().textContent = step;
+    tr.insertCell().textContent = did;
+    var c = tr.insertCell();
+    c.textContent = r.ok ? (r.done ? "✓ lesson complete" : "✓ advanced") : "✗ " + r.hint;
+    c.className = r.ok ? "pass" : "hint";
+  }
+  row("1 observe", "tried to skip ahead without doing anything", s.attempt());
+  var o = os.reality.observe({ observation: "the tide turned at six", source: "learner" });
+  row("1 observe", "reality.observe('the tide turned at six')", s.attempt());
+  row("2 verify", "tried to advance with the observation still pending", s.attempt());
+  os.reality.verify(o.meta.oid);
+  row("2 verify", "reality.verify(oid)", s.attempt());
+  var d = os.decisions.propose({ question: "log the tide?", options: ["yes","no"], grounds: [o.meta.oid] });
+  os.decisions.decide(d.meta.did, "yes");
+  row("3 decide", "propose + decide, grounded on the verified tide", s.attempt());
+  os.knowledge.learn({ statement: "tides here turn near six", topics: ["tides"], grounds: [o.meta.oid] });
+  row("4 learn", "knowledge.learn(grounded)", s.attempt());
+  document.getElementById("walkline").textContent =
+    "progress: " + JSON.stringify(s.progress()) + " — completion evidence: " +
+    os.memory.recall({ type: "lesson" })[0].body;
+})();
+</script>
+</body>
+</html>

@@ -24,7 +24,7 @@
 <div id="verdict" class="run">running…</div>
 <div class="note">Each suite runs in isolation (its own document) and reports its verdict back by message. A suite that fails to report at all is counted as a failure — silence is not success.</div>
 
-<iframe id="frame" sandbox="allow-scripts allow-same-origin"></iframe>
+<iframe id="frame" title="the capability suite currently under verification" sandbox="allow-scripts allow-same-origin"></iframe>
 
 <script>
 "use strict";
@@ -48,10 +48,50 @@ var MANIFEST = [
   { build: "0019", file: "harbor.verify.html",             label: "Harbor" },
   { build: "0020", file: "sdk.verify.html",                label: "Developer SDK" },
   { build: "0021", file: "agent.verify.html",              label: "AI Agent" },
-  { build: "0024", file: "mobile.verify.html",             label: "Mobile" },
+  { build: "0022", file: "extensions.verify.html",         label: "Extensions" },
+  { build: "0023", file: "terminal.verify.html",           label: "Terminal" },
+  { build: "0024", file: "store.verify.html",              label: "Persistence Store" },
   { build: "0025", file: "desktop.verify.html",            label: "Desktop" },
-  { build: "0026", file: "terminal.verify.html",           label: "Terminal" },
-  { build: "0027", file: "extensions.verify.html",         label: "Extensions" }
+  { build: "0026", file: "search.verify.html",             label: "Search" },
+  { build: "0027", file: "graph.verify.html",              label: "Knowledge Graph" },
+  { build: "0028", file: "reason.verify.html",             label: "Reasoning" },
+  { build: "0029", file: "plan.verify.html",               label: "Planning" },
+  { build: "0030", file: "learn.verify.html",              label: "Learning" },
+  { build: "0031", file: "recommend.verify.html",          label: "Recommendation" },
+  { build: "0032", file: "simulate.verify.html",           label: "Simulation" },
+  { build: "0033", file: "evaluate.verify.html",           label: "Evaluation" },
+  { build: "0035", file: "identity.verify.html",           label: "Identity" },
+  { build: "0036", file: "permissions.verify.html",        label: "Permissions" },
+  { build: "0037", file: "workspaces.verify.html",         label: "Workspaces" },
+  { build: "0038", file: "teams.verify.html",              label: "Teams" },
+  { build: "0039", file: "organizations.verify.html",      label: "Organizations" },
+  { build: "0040", file: "communities.verify.html",        label: "Communities" },
+  { build: "0041", file: "shared-knowledge.verify.html",   label: "Shared Knowledge" },
+  { build: "0043", file: "governance.verify.html",         label: "Governance" },
+  { build: "0045", file: "compat.verify.html",             label: "Compatibility" },
+  { build: "0046", file: "sync.verify.html",               label: "Synchronization" },
+  { build: "0047", file: "monitor.verify.html",            label: "Monitoring" },
+  { build: "0048", file: "cicd.verify.html",               label: "CI/CD" },
+  { build: "0049", file: "deploy.verify.html",             label: "Deployment" },
+  { build: "0050", file: "containers.verify.html",         label: "Containers" },
+  { build: "0051", file: "templates.verify.html",          label: "Templates" },
+  { build: "0052", file: "education.verify.html",          label: "Education" },
+  { build: "0053", file: "platform.verify.html",           label: "Developer Platform" },
+  { build: "0054", file: "research.verify.html",           label: "Research" },
+  { build: "0055", file: "commons.verify.html",            label: "Community (Commons)" },
+  { build: "0056", file: "security.verify.html",           label: "Security" },
+  { build: "0057", file: "privacy.verify.html",            label: "Privacy" },
+  { build: "0058", file: "migration.verify.html",          label: "Migration" },
+  { build: "0059", file: "preservation.verify.html",       label: "Preservation" },
+  { build: "0060", file: "accessibility.verify.html",      label: "Accessibility" },
+  { build: "0061", file: "maintenance.verify.html",        label: "Maintenance" },
+  { build: "0062", file: "improve.verify.html",            label: "Continuous Improvement" },
+  { build: "0065", file: "../index.html",                  label: "Ω∞ Gate (front page)" },
+  { build: "0068", file: "tokenizer.verify.html",          label: "Tokenizer (minbpe)" },
+  { build: "0069", file: "omega.verify.html",              label: "Omega (Full-Stack Assembly)" },
+  { build: "0073", file: "tokenizer-regex.verify.html",    label: "Regex Tokenizer (minbpe)" },
+  { build: "0075", file: "provenance.verify.html",         label: "Provenance (lineage lens)" },
+  { build: "0076", file: "retrospect.verify.html",         label: "Retrospect (as-of time lens)" }
 ];
 var PER_SUITE_TIMEOUT = 8000;
 

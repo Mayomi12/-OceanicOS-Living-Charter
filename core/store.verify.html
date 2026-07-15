@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Persistence Store</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Persistence Store</b> (build 0024, Stage 3 · Applications). Durable memory — named snapshots survive a refresh. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+<div class="note">The offline-capable app is <a href="mobile.html" style="color:#38bdf8">mobile.html</a> — this page verifies the persistence logic.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="store.js"></script>
+<script>
+"use strict";
+function fakeBackend(){ var d = {}; return { data: d,
+  getItem: function(k){ return Object.prototype.hasOwnProperty.call(d,k) ? d[k] : null; },
+  setItem: function(k,v){ d[k] = String(v); },
+  removeItem: function(k){ delete d[k]; } }; }
+function newStore(ns){ return OceanicCore.createStore({ backend: fakeBackend(), namespace: ns || "test" }); }
+
+var suite = OceanicCore.createVerifier({ name: "Persistence Store (build 0024)" });
+
+suite.test("factory requires a localStorage-compatible backend", function(a){
+  a.equal(typeof OceanicCore.createStore, "function");
+  a.throws(function(){ OceanicCore.createStore({ backend: {} }); }, "no getItem/setItem");
+  var s = newStore();
+  ["save","load","has","list","remove","exportBundle","importBundle","status"].forEach(function(fn){
+    a.equal(typeof s[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("save() then load() round-trips a snapshot and indexes it", function(a){
+  var s = newStore();
+  var r = s.save("session-1", "SNAPSHOT-DATA");
+  a.equal(r.ok, true);
+  a.equal(r.bytes, "SNAPSHOT-DATA".length);
+  a.equal(s.load("session-1"), "SNAPSHOT-DATA");
+  a.equal(s.has("session-1"), true);
+  a.deepEqual(s.list(), ["session-1"]);
+});
+
+suite.test("saving the same name again updates in place (index stays unique)", function(a){
+  var s = newStore();
+  s.save("x", "v1"); s.save("x", "v2");
+  a.equal(s.load("x"), "v2");
+  a.deepEqual(s.list(), ["x"], "no duplicate index entry");
+});
+
+suite.test("has()/load() are false/null for unknown names", function(a){
+  var s = newStore();
+  a.equal(s.has("ghost"), false);
+  a.equal(s.load("ghost"), null);
+});
+
+suite.test("remove() deletes a snapshot and de-indexes it", function(a){
+  var s = newStore();
+  s.save("a", "1"); s.save("b", "2");
+  a.equal(s.remove("a"), true);
+  a.equal(s.has("a"), false);
+  a.deepEqual(s.list(), ["b"]);
+  a.equal(s.remove("a"), false, "removing again is a no-op");
+});
+
+suite.test("names are validated — empty and '@'-prefixed (reserved) are refused", function(a){
+  var s = newStore();
+  a.throws(function(){ s.save("", "x"); });
+  a.throws(function(){ s.save("@index", "x"); }, "the index key is protected");
+  a.throws(function(){ s.save("n", 123); }, "snapshot must be a string");
+});
+
+suite.test("writes are QUOTA-SAFE — a full backend is reported, never thrown", function(a){
+  var full = OceanicCore.createStore({ backend: { getItem: function(){ return null; }, setItem: function(){ throw new Error("QuotaExceeded"); } } });
+  var r = full.save("x", "data");
+  a.equal(r.ok, false);
+  a.ok(r.error.indexOf("storage write failed") >= 0);
+});
+
+suite.test("export/import move a whole set of snapshots as one bundle", function(a){
+  var s = newStore("src");
+  s.save("one", "A"); s.save("two", "B");
+  var bundle = s.exportBundle();
+  var s2 = newStore("dst");
+  var r = s2.importBundle(bundle);
+  a.deepEqual(r, { ok: true, imported: 2, skipped: 0, failed: 0 });
+  a.equal(s2.load("one"), "A");
+  a.deepEqual(s2.list().sort(), ["one","two"]);
+});
+
+suite.test("import skips existing names unless overwrite is set", function(a){
+  var s = newStore("src"); s.save("k", "original");
+  var bundle = s.exportBundle();
+  var s2 = newStore("dst"); s2.save("k", "mine");
+  a.deepEqual(s2.importBundle(bundle), { ok: true, imported: 0, skipped: 1, failed: 0 });
+  a.equal(s2.load("k"), "mine", "kept mine");
+  a.deepEqual(s2.importBundle(bundle, { overwrite: true }), { ok: true, imported: 1, skipped: 0, failed: 0 });
+  a.equal(s2.load("k"), "original", "overwritten");
+});
+
+suite.test("import rejects malformed bundles", function(a){
+  var s = newStore();
+  a.equal(s.importBundle("not json").ok, false);
+  a.equal(s.importBundle(JSON.stringify({ v: 1 })).ok, false, "no snapshots");
+});
+
+suite.test("status() counts snapshots and total bytes", function(a){
+  var s = newStore();
+  s.save("a", "12345"); s.save("b", "678");
+  var st = s.status();
+  a.equal(st.count, 2);
+  a.equal(st.bytes, 8);
+});
+
+suite.test("REAL round-trip: a whole ocean is saved and restored across instances", function(a){
+  // one shared backend simulates localStorage persisting across page loads
+  var backend = fakeBackend();
+  var store = OceanicCore.createStore({ backend: backend, namespace: "sessions" });
+
+  // session A: do real work, then save the ocean's snapshot
+  var osA = OceanicCore.createOceanic({ manual: true, name: "work" });
+  osA.start();
+  var oid = osA.reality.observe({ observation: "the harbor shoals at low water" }).meta.oid;
+  osA.reality.verify(oid, "confirmed");
+  osA.knowledge.learn({ statement: "semidiurnal harbor", topics: ["tides"] });
+  var beforeCount = osA.status().memory.count;
+  var saved = store.save("my-harbor", osA.exportSnapshot());
+  a.equal(saved.ok, true);
+
+  // session B (a fresh "page load"): rebuild an ocean whose Memory hydrates from the saved snapshot
+  var restoreStorage = { getItem: function(k){ return k === "oceanicos.work" ? store.load("my-harbor") : null; }, setItem: function(){} };
+  var osB = OceanicCore.createOceanic({ manual: true, name: "work", storage: restoreStorage, storageKey: "oceanicos.work" });
+  a.equal(osB.status().memory.count, beforeCount, "the whole ocean came back");
+  a.equal(osB.reality.get(oid).meta.status, "verified", "the verified observation survived");
+  a.equal(osB.knowledge.byTopic("tides").length, 1, "knowledge survived, still retrievable");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Persistence Store";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>

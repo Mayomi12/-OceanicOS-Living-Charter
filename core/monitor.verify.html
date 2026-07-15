@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Monitoring</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold} .warn{color:#fbbf24;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  #gate{margin-top:12px;font-weight:bold}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Monitoring</b> (build 0047, Stage 6 · Infrastructure). The system watching its own health — Heartbeat (0003) + Memory (0005) + Logger (0014) + Reasoner (0028) + Evaluation (0033) composed into gauges, named checks, and a <b>release gate</b> (the seed of CI/CD). Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — this page's own system, watched</h2>
+<table id="health"><tr><th>Check</th><th>Meaning</th><th>Verdict</th><th>Detail</th></tr></table>
+<div id="gate"></div>
+<div class="note">Warnings are visible but do not block; failures block release. Monitoring reads, judges and reports — it never heals or hides. Humans (or Automation 0016) act.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="graph.js"></script>
+<script src="reason.js"></script>
+<script src="learn.js"></script>
+<script src="evaluate.js"></script>
+<script src="monitor.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function healthySystem(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "mon-test" });
+  os.start();
+  var log = OceanicCore.createLogger({ now: clock });
+  var o = os.reality.observe({ observation: "the light is lit", source: "keeper" });
+  os.reality.verify(o.meta.oid);
+  var d = os.decisions.propose({ question: "keep watch?", options: ["yes","no"], grounds: [o.meta.oid] });
+  os.decisions.decide(d.meta.did, "yes");
+  var M = OceanicCore.createMonitor({ oceanic: os, logger: log });
+  return { os: os, log: log, M: M, oid: o.meta.oid };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Monitoring (build 0047)" });
+
+suite.test("factory requires an assembled OceanicOS and exposes the surface", function(a){
+  a.equal(typeof OceanicCore.createMonitor, "function");
+  a.throws(function(){ OceanicCore.createMonitor({}); }, "no oceanic");
+  var f = healthySystem();
+  ["gauges","checks","healthy","releaseGate","sample"].forEach(function(fn){ a.equal(typeof f.M[fn], "function", "exposes " + fn); });
+});
+
+suite.test("a booted, verified, observed system is healthy — release permitted", function(a){
+  var f = healthySystem();
+  var cs = f.M.checks();
+  a.equal(cs.length, 6, "six named checks");
+  cs.forEach(function(c){ a.equal(c.verdict, "pass", c.id + " passes: " + c.detail); });
+  a.equal(f.M.healthy(), true);
+  var gate = f.M.releaseGate();
+  a.equal(gate.release, true);
+  a.deepEqual(gate.blockers, []);
+  a.ok(gate.headline.indexOf("RELEASE PERMITTED") === 0, gate.headline);
+});
+
+suite.test("gauges() reads every dial in one snapshot", function(a){
+  var f = healthySystem();
+  var g = f.M.gauges();
+  a.ok(g.heartbeat.pulse >= 1, "heartbeat pulse");
+  a.ok(g.ocean.count >= 2, "ocean record count");
+  a.equal(g.reality.verified, 1);
+  a.equal(typeof g.soundness.sound, "number", "soundness audit");
+  a.ok(g.evaluation.score >= 0 && g.evaluation.grade, "evaluation score+grade");
+  a.equal(typeof g.log.emitted, "number", "log status");
+});
+
+suite.test("UNSOUND reality blocks release — the SOUND check fails", function(a){
+  var f = healthySystem();
+  var o = f.os.reality.observe({ observation: "a shaky rumor", source: "dockside" });
+  f.os.decisions.propose({ question: "act on the rumor?", options: ["y","n"], grounds: [o.meta.oid] });
+  f.os.reality.reject(o.meta.oid); // the proposal now rests on rejected ground
+  var byId = {}; f.M.checks().forEach(function(c){ byId[c.id] = c; });
+  a.equal(byId.SOUND.verdict, "fail", byId.SOUND.detail);
+  a.equal(f.M.healthy(), false);
+  var gate = f.M.releaseGate();
+  a.equal(gate.release, false);
+  a.equal(gate.blockers.length >= 1, true);
+  a.ok(gate.headline.indexOf("SOUND") >= 0, "the blocker is named in the headline");
+});
+
+suite.test("failing persistence blocks release — the STORAGE check fails", function(a){
+  var badStorage = { getItem: function(){ return null; }, setItem: function(){ throw new Error("disk full"); } };
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, storage: badStorage, name: "mon-bad-disk" });
+  os.start();
+  os.reality.observe({ observation: "this write will not persist", source: "s" });
+  var M = OceanicCore.createMonitor({ oceanic: os, logger: OceanicCore.createLogger({ now: clock }) });
+  var byId = {}; M.checks().forEach(function(c){ byId[c.id] = c; });
+  a.equal(byId.STORAGE.verdict, "fail");
+  a.ok(byId.STORAGE.detail.indexOf("failed") >= 0, byId.STORAGE.detail);
+  a.equal(M.releaseGate().release, false);
+});
+
+suite.test("operational errors block release — the LOG check fails", function(a){
+  var f = healthySystem();
+  a.equal(f.M.healthy(), true, "healthy before the error");
+  f.log.error("automation step blew up", { step: 3 });
+  var byId = {}; f.M.checks().forEach(function(c){ byId[c.id] = c; });
+  a.equal(byId.LOG.verdict, "fail");
+  a.equal(f.M.healthy(), false);
+});
+
+suite.test("warnings are VISIBLE but never block: no logger + never booted", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "mon-quiet" }); // not started, no logger
+  var o = os.reality.observe({ observation: "one quiet fact", source: "s" });
+  os.reality.verify(o.meta.oid);
+  var M = OceanicCore.createMonitor({ oceanic: os });
+  var byId = {}; M.checks().forEach(function(c){ byId[c.id] = c; });
+  a.equal(byId.LOG.verdict, "warn", "an unobserved system is a named risk");
+  a.equal(byId.HB.verdict, "warn", "a system that never beat is worth a look");
+  a.equal(M.healthy(), true, "…but warnings do not fail health");
+  var gate = M.releaseGate();
+  a.equal(gate.release, true);
+  a.equal(gate.cautions.length, 2, "both cautions are listed on the gate");
+});
+
+suite.test("the pending backlog threshold is configurable", function(a){
+  var f = healthySystem();
+  f.os.reality.observe({ observation: "await me 1", source: "s" });
+  f.os.reality.observe({ observation: "await me 2", source: "s" });
+  var strict = OceanicCore.createMonitor({ oceanic: f.os, logger: f.log, thresholds: { pendingBacklog: 1 } });
+  var byId = {}; strict.checks().forEach(function(c){ byId[c.id] = c; });
+  a.equal(byId.PENDING.verdict, "warn", byId.PENDING.detail);
+  a.equal(strict.healthy(), true, "a backlog warns, it does not block");
+  var lax = OceanicCore.createMonitor({ oceanic: f.os, logger: f.log, thresholds: { pendingBacklog: 5 } });
+  byId = {}; lax.checks().forEach(function(c){ byId[c.id] = c; });
+  a.equal(byId.PENDING.verdict, "pass", "same ocean, laxer bar");
+});
+
+suite.test("a poor self-evaluation blocks release — the SCORE check fails", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "mon-poor" });
+  os.start();
+  var keep = os.reality.observe({ observation: "one good fact", source: "s" }); os.reality.verify(keep.meta.oid);
+  ["bad 1","bad 2","bad 3"].forEach(function(b){
+    var o = os.reality.observe({ observation: b, source: "rumor" }); os.reality.reject(o.meta.oid);
+  });
+  var M = OceanicCore.createMonitor({ oceanic: os, logger: OceanicCore.createLogger({ now: clock }) });
+  var byId = {}; M.checks().forEach(function(c){ byId[c.id] = c; });
+  a.equal(byId.SCORE.verdict, "fail", byId.SCORE.detail);
+  a.equal(M.releaseGate().release, false);
+});
+
+suite.test("sample() writes the health line into the operational log", function(a){
+  var f = healthySystem();
+  var before = f.log.status().counts.info;
+  var snap = f.M.sample();
+  a.equal(snap.healthy, true);
+  a.equal(f.log.status().counts.info, before + 1, "healthy sample logs at info");
+  f.log.error("something broke");
+  var snap2 = f.M.sample();
+  a.equal(snap2.healthy, false);
+  a.ok(f.log.status().counts.error >= 2, "unhealthy sample logs at error");
+  a.ok(snap2.gate.headline.indexOf("RELEASE BLOCKED") === 0);
+});
+
+suite.test("monitoring never heals or hides — reads leave the ocean untouched", function(a){
+  var f = healthySystem();
+  var before = f.os.memory.status().count;
+  f.M.gauges(); f.M.checks(); f.M.healthy(); f.M.releaseGate(); f.M.sample();
+  a.equal(f.os.memory.status().count, before, "no records written by watching");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Monitoring";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = healthySystem();
+  f.os.reality.observe({ observation: "two ships inbound", source: "watch" }); // a little pending backlog
+  var table = document.getElementById("health");
+  f.M.checks().forEach(function(c){
+    var row = table.insertRow();
+    row.insertCell().textContent = c.id;
+    row.insertCell().textContent = c.name;
+    var v = row.insertCell(); v.textContent = c.verdict.toUpperCase(); v.className = c.verdict;
+    row.insertCell().textContent = c.detail;
+  });
+  var gate = f.M.releaseGate();
+  var el = document.getElementById("gate");
+  el.textContent = gate.headline;
+  el.className = gate.release ? "pass" : "fail";
+})();
+</script>
+</body>
+</html>

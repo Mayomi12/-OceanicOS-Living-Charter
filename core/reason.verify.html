@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Reasoning</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .s-sound{color:#34d399} .s-provisional{color:#fbbf24} .s-unsound{color:#fb7185} .s-broken{color:#f472b6} .s-ungrounded{color:#8fb3c4}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Reasoning</b> (build 0028, Stage 4 · Intelligence). Propagates the status of reality up to everything grounded on it. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — an audit of what rests on shifting reality</h2>
+<table id="audit"><tr><th>Type</th><th>Statement / Question</th><th>Soundness</th><th>Why</th></tr></table>
+<div class="note">Each verdict follows only from the current status of the cited observations — when reality is re-examined, what stands on it is re-judged automatically.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="reason.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+
+// build an ocean where grounds have shifted since the records were made
+function seeded(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "reason-test" });
+  os.start();
+  var ids = {};
+  // SOUND: verified ground, still verified
+  var oV = os.reality.observe({ observation: "verified reef" }); os.reality.verify(oV.meta.oid);
+  ids.dSound = os.decisions.propose({ question: "reroute around the reef?", options: ["y","n"], grounds: [oV.meta.oid] }).meta.did;
+  os.decisions.decide(ids.dSound, "y");
+  ids.kSound = os.knowledge.learn({ statement: "the reef is real", grounds: [oV.meta.oid] }).meta.kid;
+  // PROVISIONAL: ground was verified when used, later archived
+  var oA = os.reality.observe({ observation: "tentative shoal" }); os.reality.verify(oA.meta.oid);
+  ids.dProv = os.decisions.propose({ question: "slow down?", options: ["y","n"], grounds: [oA.meta.oid] }).meta.did;
+  os.decisions.decide(ids.dProv, "y");
+  os.reality.archive(oA.meta.oid);
+  // UNSOUND: ground was verified, later REJECTED on re-examination
+  var oR = os.reality.observe({ observation: "disputed rock" }); os.reality.verify(oR.meta.oid);
+  ids.kUnsound = os.knowledge.learn({ statement: "the rock exists", grounds: [oR.meta.oid] }).meta.kid;
+  os.reality.reject(oR.meta.oid, "it was a shadow");
+  ids.oR = oR.meta.oid;
+  // UNGROUNDED: cites nothing
+  ids.kUng = os.knowledge.learn({ statement: "the sea is vast", topics: ["poetry"] }).meta.kid;
+  // BROKEN: knowledge citing a ground that isn't a known observation
+  ids.kBroken = os.knowledge.learn({ statement: "rests on a missing sounding", grounds: ["o-does-not-exist"] }).meta.kid;
+  return { os: os, ids: ids };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Reasoning (build 0028)" });
+
+suite.test("factory requires an assembled OceanicOS", function(a){
+  a.equal(typeof OceanicCore.createReasoner, "function");
+  a.throws(function(){ OceanicCore.createReasoner({}); });
+  var R = OceanicCore.createReasoner({ oceanic: seeded().os });
+  ["assess","audit","unsound","dependents","explain"].forEach(function(fn){ a.equal(typeof R[fn], "function", "exposes " + fn); });
+});
+
+suite.test("a record whose grounds are all verified is SOUND", function(a){
+  var f = seeded(); var R = OceanicCore.createReasoner({ oceanic: f.os });
+  a.equal(R.assess(f.ids.dSound).soundness, "sound");
+  a.equal(R.assess(f.ids.kSound).soundness, "sound");
+});
+
+suite.test("a record resting on a REJECTED ground is UNSOUND", function(a){
+  var f = seeded(); var R = OceanicCore.createReasoner({ oceanic: f.os });
+  var a1 = R.assess(f.ids.kUnsound);
+  a.equal(a1.soundness, "unsound");
+  a.equal(a1.grounds[0].status, "rejected", "the reason is a rejected observation");
+});
+
+suite.test("a record whose grounds are no longer verified (archived/pending) is PROVISIONAL", function(a){
+  var f = seeded(); var R = OceanicCore.createReasoner({ oceanic: f.os });
+  var a1 = R.assess(f.ids.dProv);
+  a.equal(a1.soundness, "provisional");
+  a.equal(a1.grounds[0].status, "archived");
+});
+
+suite.test("a record citing no grounds is UNGROUNDED; a missing ground is BROKEN", function(a){
+  var f = seeded(); var R = OceanicCore.createReasoner({ oceanic: f.os });
+  a.equal(R.assess(f.ids.kUng).soundness, "ungrounded");
+  var b = R.assess(f.ids.kBroken);
+  a.equal(b.soundness, "broken");
+  a.equal(b.grounds[0].status, "missing");
+});
+
+suite.test("audit() lists every grounded record, most-concerning first", function(a){
+  var f = seeded(); var R = OceanicCore.createReasoner({ oceanic: f.os });
+  var au = R.audit();
+  a.equal(au.total, 6, "2 sound + 1 provisional + 1 unsound + 1 ungrounded + 1 broken");
+  // broken/unsound must appear before sound
+  var firstSound = au.items.map(function(i){ return i.soundness; }).indexOf("sound");
+  var lastBad = au.items.map(function(i){ return i.soundness; }).lastIndexOf("broken");
+  a.ok(lastBad < firstSound, "broken is ranked ahead of sound");
+  a.deepEqual(au.summary, { sound: 2, provisional: 1, unsound: 1, broken: 1, ungrounded: 1 });
+});
+
+suite.test("unsound() is the actionable set — things on rejected or missing reality", function(a){
+  var f = seeded(); var R = OceanicCore.createReasoner({ oceanic: f.os });
+  var bad = R.unsound().map(function(i){ return i.soundness; }).sort();
+  a.deepEqual(bad, ["broken","unsound"], "exactly the ones that need revisiting");
+});
+
+suite.test("dependents(oid) shows what rests on a given observation and how sound it now is", function(a){
+  var f = seeded(); var R = OceanicCore.createReasoner({ oceanic: f.os });
+  var deps = R.dependents(f.ids.oR);
+  a.equal(deps.length, 1, "the knowledge that cited the disputed rock");
+  a.equal(deps[0].soundness, "unsound", "now unsound because the rock was rejected");
+  a.deepEqual(R.dependents("ghost"), [], "nothing depends on an unknown observation");
+});
+
+suite.test("explain() gives a human-readable verdict with the grounds", function(a){
+  var f = seeded(); var R = OceanicCore.createReasoner({ oceanic: f.os });
+  var text = R.explain(f.ids.kUnsound);
+  a.ok(text.indexOf("UNSOUND") >= 0);
+  a.ok(text.indexOf("rejected") >= 0, "names the offending status");
+  a.throws(function(){ R.assess("no-such-id"); });
+});
+
+suite.test("reasoning is pure — assessing changes nothing in the ocean", function(a){
+  var f = seeded(); var R = OceanicCore.createReasoner({ oceanic: f.os });
+  var before = f.os.status().memory.count;
+  R.audit(); R.unsound(); R.explain(f.ids.dSound);
+  a.equal(f.os.status().memory.count, before, "no records were written");
+});
+
+suite.test("re-judging is automatic: rejecting a ground flips its dependents to unsound", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  os.start();
+  var o = os.reality.observe({ observation: "a sighting" }); os.reality.verify(o.meta.oid);
+  var k = os.knowledge.learn({ statement: "the sighting is real", grounds: [o.meta.oid] });
+  var R = OceanicCore.createReasoner({ oceanic: os });
+  a.equal(R.assess(k.meta.kid).soundness, "sound", "sound while the ground is verified");
+  os.reality.reject(o.meta.oid, "mistaken");
+  a.equal(R.assess(k.meta.kid).soundness, "unsound", "the very same record is now unsound — no rewrite needed");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Reasoning";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = seeded();
+  var R = OceanicCore.createReasoner({ oceanic: f.os });
+  var table = document.getElementById("audit");
+  R.audit().items.forEach(function(it){
+    var row = table.insertRow();
+    var c0 = row.insertCell(); c0.textContent = it.type;
+    row.insertCell().textContent = it.title;
+    var c = row.insertCell(); c.textContent = it.soundness.toUpperCase(); c.className = "s-" + it.soundness;
+    row.insertCell().textContent = it.reason;
+  });
+})();
+</script>
+</body>
+</html>

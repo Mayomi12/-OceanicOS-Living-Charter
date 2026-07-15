@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Privacy</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .s-public{color:#8fb3c4} .s-personal{color:#fbbf24} .s-sensitive{color:#fb7185} .redacted{color:#94a3b8;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Privacy</b> (build 0057, Stage 8 · Stewardship). Personal data as a first-class concern — classification, inventory, portable access, and the append-only ocean's HONEST answer to "forget me": redaction by supersession. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — Mara asks the harbor to forget her</h2>
+<table id="inv"><tr><th>Record</th><th>Sensitivity</th><th>Before forget()</th><th>After forget()</th></tr></table>
+<div id="invline" class="note"></div>
+<div class="note">The honest limit, stated rather than hidden: redaction withdraws content from every current read, search and export — but the original remains in deep history until a Migration rebuilds an ocean without it. A privacy capability that pretended otherwise would violate the Charter twice over.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="search.js"></script>
+<script src="privacy.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function rig(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "privacy-test" });
+  os.start();
+  var log = OceanicCore.createLogger({ now: clock });
+  var P = OceanicCore.createPrivacy({ oceanic: os, logger: log });
+  return { os: os, P: P, log: log };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Privacy (build 0057)" });
+
+suite.test("factory requires the ocean and exposes the surface", function(a){
+  a.equal(typeof OceanicCore.createPrivacy, "function");
+  a.throws(function(){ OceanicCore.createPrivacy({}); }, "no oceanic");
+  var f = rig();
+  ["mark","inventory","access","redact","forget","audit","status"].forEach(function(fn){ a.equal(typeof f.P[fn], "function", "exposes " + fn); });
+  a.deepEqual(OceanicCore.createPrivacy.SENSITIVITIES.sort(), ["personal","public","sensitive"]);
+});
+
+suite.test("mark classifies a record about a person — engine metadata preserved", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "Mara berthed at pier 4", source: "harbormaster" });
+  f.os.reality.verify(o.meta.oid);
+  var m = f.P.mark(o.meta.oid, { subject: "mara", sensitivity: "personal" });
+  a.equal(m.subject, "mara");
+  a.equal(m.sensitivity, "personal");
+  a.equal(m.redacted, false);
+  var rec = f.os.reality.get(o.meta.oid);
+  a.equal(rec.meta.status, "verified", "the observation is STILL verified after marking");
+  a.equal(rec.meta.privacy.subject, "mara");
+});
+
+suite.test("mark is guarded — subject required, sensitivity from the ladder, record must exist", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "x", source: "s" });
+  a.throws(function(){ f.P.mark(o.meta.oid, { sensitivity: "personal" }); }, "personal data is data ABOUT someone");
+  a.throws(function(){ f.P.mark(o.meta.oid, { subject: "mara", sensitivity: "top-secret" }); }, "unknown sensitivity");
+  a.throws(function(){ f.P.mark("ghost", { subject: "mara", sensitivity: "personal" }); }, "no such record");
+});
+
+suite.test("inventory: everything currently known about a person, across types", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "Mara berthed at pier 4", source: "harbormaster" });
+  var k = f.os.knowledge.learn({ statement: "Mara prefers the east berth", topics: ["berthing"] });
+  var other = f.os.reality.observe({ observation: "storm coming", source: "watch" });
+  f.P.mark(o.meta.oid, { subject: "mara", sensitivity: "personal" });
+  f.P.mark(k.meta.kid, { subject: "mara", sensitivity: "sensitive" });
+  var inv = f.P.inventory("mara");
+  a.equal(inv.length, 2, "two records about mara — the storm is not hers");
+  a.deepEqual(inv.map(function(r){ return r.type; }).sort(), ["knowledge","observation"]);
+  a.deepEqual(f.P.inventory("nobody"), []);
+  a.throws(function(){ f.P.inventory(""); }, "a subject is required");
+});
+
+suite.test("access(subject) is the portable export of the data map", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "Mara berthed at pier 4", source: "harbormaster" });
+  f.P.mark(o.meta.oid, { subject: "mara", sensitivity: "personal" });
+  var exported = JSON.parse(f.P.access("mara"));
+  a.equal(exported.subject, "mara");
+  a.equal(exported.records, 1);
+  a.equal(exported.exported[0].body, "Mara berthed at pier 4");
+});
+
+suite.test("redact withdraws content from EVERY current read — search included", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "Mara was treated at the clinic on pier 9", source: "clinic" });
+  f.os.reality.verify(o.meta.oid);
+  f.P.mark(o.meta.oid, { subject: "mara", sensitivity: "sensitive" });
+  var S = OceanicCore.createSearch({ oceanic: f.os });
+  a.ok(S.search("clinic").length >= 1, "findable before");
+  var r = f.P.redact(o.meta.oid, "subject request");
+  a.equal(r.redacted, true);
+  a.ok(r.body.indexOf("[redacted") === 0, "the body is a tombstone");
+  a.equal(S.search("treated").length, 0, "search no longer finds the CONTENT");
+  a.equal(S.search("pier").length, 0, "none of it");
+  a.ok(S.search("clinic").length >= 1, "…but PROVENANCE (source) is preserved by law — who told us is never erased");
+  var rec = f.os.reality.get(o.meta.oid);
+  a.equal(rec.meta.status, "verified", "the engine's status machine is undisturbed");
+});
+
+suite.test("THE HONEST LIMIT — the original remains in deep history, and we say so", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "the sensitive detail", source: "s" });
+  f.P.mark(o.meta.oid, { subject: "mara", sensitivity: "sensitive" });
+  f.P.redact(o.meta.oid, "subject request");
+  var current = f.os.memory.recall({}).map(function(r){ return r.body; }).join(" ");
+  a.equal(current.indexOf("the sensitive detail"), -1, "no current read carries the content");
+  var deep = f.os.memory.recall({ includeSuperseded: true }).map(function(r){ return r.body; }).join(" ");
+  a.ok(deep.indexOf("the sensitive detail") >= 0, "deep history still holds it — append-only is the law");
+  var out = f.P.forget("mara", "already redacted");
+  a.ok(out.note.indexOf("nothing to withdraw") >= 0 || out.note.indexOf("Migration") >= 0, "the limit is stated, not hidden");
+});
+
+suite.test("redact is guarded — a reason, a real record, never twice", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "x", source: "s" });
+  a.throws(function(){ f.P.redact(o.meta.oid); }, "withdrawal is itself on the record");
+  f.P.redact(o.meta.oid, "test");
+  a.throws(function(){ f.P.redact(o.meta.oid, "again"); }, "already redacted");
+  a.throws(function(){ f.P.redact("ghost", "r"); }, "no such record");
+});
+
+suite.test("forget(subject) sweeps personal + sensitive; the public record stands", function(a){
+  var f = rig();
+  var o1 = f.os.reality.observe({ observation: "Mara berthed at pier 4", source: "harbormaster" });
+  var o2 = f.os.reality.observe({ observation: "Mara's medical note", source: "clinic" });
+  var o3 = f.os.reality.observe({ observation: "Mara holds the harbor record for the fastest docking", source: "gazette" });
+  f.P.mark(o1.meta.oid, { subject: "mara", sensitivity: "personal" });
+  f.P.mark(o2.meta.oid, { subject: "mara", sensitivity: "sensitive" });
+  f.P.mark(o3.meta.oid, { subject: "mara", sensitivity: "public" });
+  var out = f.P.forget("mara", "subject request");
+  a.equal(out.redacted, 2, "personal + sensitive withdrawn");
+  var inv = f.P.inventory("mara");
+  var publicOnes = inv.filter(function(r){ return !r.redacted; });
+  a.equal(publicOnes.length, 1);
+  a.ok(publicOnes[0].body.indexOf("fastest docking") >= 0, "the public record is untouched");
+});
+
+suite.test("audit and status see the whole privacy picture", function(a){
+  var f = rig();
+  var o1 = f.os.reality.observe({ observation: "a", source: "s" });
+  var o2 = f.os.reality.observe({ observation: "b", source: "s" });
+  var o3 = f.os.reality.observe({ observation: "c", source: "s" });
+  f.P.mark(o1.meta.oid, { subject: "mara", sensitivity: "personal" });
+  f.P.mark(o2.meta.oid, { subject: "kai", sensitivity: "sensitive" });
+  f.P.mark(o3.meta.oid, { subject: "kai", sensitivity: "sensitive" });
+  f.P.redact(o3.meta.oid, "done with it");
+  var a1 = f.P.audit();
+  a.equal(a1.marked, 3);
+  a.deepEqual(a1.subjects, ["kai","mara"]);
+  a.equal(a1.redacted, 1);
+  a.equal(a1.sensitiveInTheOpen, 1, "one sensitive record still readable — visible to stewards");
+  a.deepEqual(f.P.status(), { marked: 3, subjects: 2, redacted: 1, sensitiveInTheOpen: 1 });
+});
+
+suite.test("marking and redaction are open amendments — one each, history kept", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "x", source: "s" });
+  var before = f.os.memory.status();
+  f.P.mark(o.meta.oid, { subject: "mara", sensitivity: "personal" });
+  f.P.redact(o.meta.oid, "r");
+  var after = f.os.memory.status();
+  a.equal(after.count, before.count + 2, "two amendments appended");
+  a.equal(after.superseded, before.superseded + 2, "each superseding openly");
+  a.equal(after.current, before.current, "still one current record");
+});
+
+suite.test("watching is free — inventory/access/audit write nothing", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "x", source: "s" });
+  f.P.mark(o.meta.oid, { subject: "mara", sensitivity: "personal" });
+  var before = f.os.memory.status().count;
+  f.P.inventory("mara"); f.P.access("mara"); f.P.audit(); f.P.status();
+  a.equal(f.os.memory.status().count, before);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Privacy";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = rig();
+  var o1 = f.os.reality.observe({ observation: "Mara berthed at pier 4 overnight", source: "harbormaster" });
+  var o2 = f.os.reality.observe({ observation: "Mara was treated at the pier 9 clinic", source: "clinic" });
+  var o3 = f.os.reality.observe({ observation: "Mara holds the record for the fastest docking", source: "gazette" });
+  f.P.mark(o1.meta.oid, { subject: "mara", sensitivity: "personal" });
+  f.P.mark(o2.meta.oid, { subject: "mara", sensitivity: "sensitive" });
+  f.P.mark(o3.meta.oid, { subject: "mara", sensitivity: "public" });
+  var before = {};
+  f.P.inventory("mara").forEach(function(r){ before[r.id] = r.body; });
+  var out = f.P.forget("mara", "subject request");
+  var table = document.getElementById("inv");
+  f.P.inventory("mara").forEach(function(r){
+    var row = table.insertRow();
+    row.insertCell().textContent = r.type;
+    var s = row.insertCell(); s.textContent = r.sensitivity; s.className = "s-" + r.sensitivity;
+    row.insertCell().textContent = before[r.id] || "(superseded)";
+    var c = row.insertCell(); c.textContent = r.body; if (r.redacted) c.className = "redacted";
+  });
+  document.getElementById("invline").textContent =
+    "forget('mara') → " + out.redacted + " record(s) withdrawn from every current read · " + out.note;
+})();
+</script>
+</body>
+</html>

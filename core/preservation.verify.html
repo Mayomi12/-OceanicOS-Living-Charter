@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Preservation</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Preservation</b> (build 0059, Stage 8 · Stewardship). Knowledge preserved for future generations — sealed archives with fixity, verification that makes silent corruption LOUD, and restore that refuses damage. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — a shelf of archives, audited</h2>
+<table id="shelf"><tr><th>Archive</th><th>Records</th><th>Fixity</th><th>Audit verdict</th></tr></table>
+<div id="shelfline" class="note"></div>
+<div class="note">The honest limit, as always: the digest is a FIXITY check — it makes accident, rot and transmission damage detectable. It is not a cryptographic seal against a deliberate adversary, and the envelope itself says so.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="privacy.js"></script>
+<script src="migration.js"></script>
+<script src="preservation.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function rig(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "pres-src" });
+  os.start();
+  var o = os.reality.observe({ observation: "the harbor light was rebuilt in the spring", source: "keeper" });
+  os.reality.verify(o.meta.oid);
+  os.knowledge.learn({ statement: "lights need rebuilding every forty years", topics: ["lights"], grounds: [o.meta.oid] });
+  var P = OceanicCore.createPreservation({ now: clock });
+  return { os: os, P: P };
+}
+function corrupt(archive){
+  // one flipped character deep inside the snapshot — the quietest possible rot
+  var i = archive.indexOf("rebuilt");
+  return archive.slice(0, i) + "rebuiIt" + archive.slice(i + 7);
+}
+
+var suite = OceanicCore.createVerifier({ name: "Preservation (build 0059)" });
+
+suite.test("factory exposes the archival surface; digest is deterministic and content-sensitive", function(a){
+  a.equal(typeof OceanicCore.createPreservation, "function");
+  var f = rig();
+  ["digest","seal","verify","inventory","restore","audit"].forEach(function(fn){ a.equal(typeof f.P[fn], "function", "exposes " + fn); });
+  a.equal(f.P.digest("the same text"), f.P.digest("the same text"), "deterministic");
+  a.ok(f.P.digest("the same text") !== f.P.digest("the same texT"), "one character changes the digest");
+  a.ok(f.P.digest("x").indexOf(OceanicCore.createPreservation.ALGORITHM) === 0, "the algorithm is named, honestly");
+});
+
+suite.test("seal produces a self-describing envelope — and never touches the source", function(a){
+  var f = rig();
+  var before = f.os.memory.status();
+  var archive = f.P.seal(f.os.memory, { label: "spring-census" });
+  a.deepEqual(f.os.memory.status(), before, "pure");
+  var env = JSON.parse(archive);
+  a.equal(env.oceanicArchive, 1);
+  a.equal(env.label, "spring-census");
+  a.equal(env.records, before.count);
+  a.ok(env.fixity.digest.length > 10);
+  a.ok(env.fixity.note.indexOf("not a cryptographic seal") >= 0, "the limit travels IN the envelope");
+});
+
+suite.test("verify: an untouched archive is intact, every character as sealed", function(a){
+  var f = rig();
+  var v = f.P.verify(f.P.seal(f.os.memory, { label: "x" }));
+  a.equal(v.intact, true);
+  a.equal(v.expected, v.actual);
+  a.ok(v.detail.indexOf("fixity holds") >= 0);
+});
+
+suite.test("ONE FLIPPED CHARACTER anywhere is detected — silent corruption made loud", function(a){
+  var f = rig();
+  var archive = f.P.seal(f.os.memory, { label: "spring-census" });
+  var v = f.P.verify(corrupt(archive));
+  a.equal(v.intact, false);
+  a.ok(v.expected !== v.actual, "the digests disagree");
+  a.ok(v.detail.indexOf("FIXITY BROKEN") >= 0);
+});
+
+suite.test("restore round-trips a working Memory", function(a){
+  var f = rig();
+  var archive = f.P.seal(f.os.memory, { label: "spring-census" });
+  var r = f.P.restore(archive);
+  a.equal(r.label, "spring-census");
+  a.equal(r.memory.status().count, f.os.memory.status().count, "every record aboard");
+  a.equal(r.memory.recall({ type: "knowledge" }).length, 1);
+  var more = r.memory.remember({ type: "observation", body: "life continues after restore", source: "s" });
+  a.ok(more.id, "the restored ocean accepts new records");
+});
+
+suite.test("restore REFUSES a corrupt archive — no silent half-restore", function(a){
+  var f = rig();
+  var archive = f.P.seal(f.os.memory, { label: "spring-census" });
+  var threw = false;
+  try { f.P.restore(corrupt(archive)); }
+  catch(e){ threw = true; a.ok(e.message.indexOf("REFUSED") >= 0 && e.message.indexOf("human decision") >= 0, e.message); }
+  a.equal(threw, true);
+});
+
+suite.test("inventory peeks without opening — label, count, fixity, size", function(a){
+  var f = rig();
+  var inv = f.P.inventory(f.P.seal(f.os.memory, { label: "spring-census" }));
+  a.equal(inv.label, "spring-census");
+  a.equal(inv.records, f.os.memory.status().count);
+  a.equal(inv.fixity.algorithm, OceanicCore.createPreservation.ALGORITHM);
+  a.ok(inv.bytes > 100);
+});
+
+suite.test("guards: non-archives and unreadable input are refused with clear words", function(a){
+  var f = rig();
+  a.throws(function(){ f.P.verify(42); }, "not a string");
+  a.throws(function(){ f.P.verify("{plain json but not an archive}"); }, "bad JSON");
+  a.throws(function(){ f.P.verify(JSON.stringify({ some: "object" })); }, "not an envelope");
+  a.throws(function(){ f.P.seal({ nope: true }); }, "unsupported source");
+  a.throws(function(){ f.P.audit("not an array"); }, "the shelf must be an array");
+});
+
+suite.test("the archival chain: migrate (archival copy) → seal → verify → restore", function(a){
+  var f = rig();
+  var priv = OceanicCore.createPrivacy({ oceanic: f.os });
+  var o = f.os.reality.observe({ observation: "a personal detail to withdraw", source: "s" });
+  priv.mark(o.meta.oid, { subject: "mara", sensitivity: "personal" });
+  priv.redact(o.meta.oid, "asked");
+  var M = OceanicCore.createMigration({ now: clock });
+  var successor = M.migrate(f.os.memory); // purges redacted originals
+  var archive = f.P.seal(successor.snapshot, { label: "post-migration" });
+  a.equal(f.P.verify(archive).intact, true);
+  var r = f.P.restore(archive);
+  var deep = r.memory.recall({ includeSuperseded: true }).map(function(x){ return x.body; }).join(" ");
+  a.equal(deep.indexOf("a personal detail to withdraw"), -1, "the preserved archive carries no purged content");
+  a.ok(deep.indexOf("migration:") >= 0, "and it remembers the migration that shaped it");
+});
+
+suite.test("audit sweeps a whole shelf and names the damage", function(a){
+  var f = rig();
+  var good1 = f.P.seal(f.os.memory, { label: "monday" });
+  var good2 = f.P.seal(f.os.memory, { label: "tuesday" });
+  var bad = corrupt(f.P.seal(f.os.memory, { label: "wednesday" }));
+  var report = f.P.audit([good1, good2, bad, "not even an archive"]);
+  a.equal(report.archives, 4);
+  a.equal(report.intact, 2);
+  a.equal(report.broken, 2);
+  a.ok(report.headline.indexOf("DAMAGED") >= 0);
+  a.ok(report.headline.indexOf("wednesday") >= 0, "the damaged archive is named");
+  a.deepEqual(f.P.audit([good1, good2]).headline, "ALL 2 ARCHIVES INTACT");
+});
+
+suite.test("an internally inconsistent envelope (count lies) is not intact", function(a){
+  var f = rig();
+  var env = JSON.parse(f.P.seal(f.os.memory, { label: "liar" }));
+  env.records = env.records + 5; // the label says more than the snapshot holds
+  env.fixity.digest = f.P.digest(env.snapshot); // fixity still matches the snapshot…
+  var v = f.P.verify(JSON.stringify(env));
+  a.equal(v.intact, false, "…but the declared count does not");
+  a.ok(v.detail.indexOf("inconsistent") >= 0);
+});
+
+suite.test("archives are stable over time — sealing twice yields the same fixity", function(a){
+  var f = rig();
+  var d1 = JSON.parse(f.P.seal(f.os.memory, { label: "a" })).fixity.digest;
+  var d2 = JSON.parse(f.P.seal(f.os.memory, { label: "b" })).fixity.digest;
+  a.equal(d1, d2, "same content, same digest — labels do not disturb fixity");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Preservation";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = rig();
+  var shelf = [
+    f.P.seal(f.os.memory, { label: "spring-census" }),
+    f.P.seal(f.os.memory, { label: "summer-census" }),
+    corrupt(f.P.seal(f.os.memory, { label: "autumn-census" }))
+  ];
+  var report = f.P.audit(shelf);
+  var table = document.getElementById("shelf");
+  shelf.forEach(function(archive, i){
+    var row = table.insertRow();
+    var result = report.results[i];
+    var inv = null;
+    try { inv = f.P.inventory(archive); } catch(e){}
+    row.insertCell().textContent = result.label || "(unreadable)";
+    row.insertCell().textContent = inv ? inv.records : "—";
+    row.insertCell().textContent = inv ? inv.fixity.digest.slice(0, 28) + "…" : "—";
+    var c = row.insertCell();
+    c.textContent = result.intact ? "INTACT" : "DAMAGED — " + result.detail;
+    c.className = result.intact ? "pass" : "fail";
+  });
+  document.getElementById("shelfline").textContent = report.headline +
+    " — one flipped character in the autumn census was enough to be caught.";
+})();
+</script>
+</body>
+</html>

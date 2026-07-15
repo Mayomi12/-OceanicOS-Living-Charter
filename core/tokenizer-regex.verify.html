@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Regex Tokenizer</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .chips span{display:inline-block;margin:2px;padding:3px 7px;border:1px solid #12455f;border-radius:4px;font-size:12px}
+  .chips .c0{background:#0a2a3f} .chips .c1{background:#123a2a} .chips .c2{background:#3a2a12} .chips .c3{background:#2a123a}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Regex Tokenizer</b> (build 0073, Stage 7 · Ecosystem). Byte-pair encoding with a <b>GPT-style regex pre-split</b>, rooted faithfully in <b>Karpathy's minbpe</b> (RegexTokenizer) — merges never cross a chunk boundary. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — the pre-split keeps categories apart</h2>
+<div id="live" class="chips"></div>
+<div id="liveline" class="note"></div>
+<div class="note">The stated limit, as always: this adds regex pre-splitting but still has no special tokens — a teaching-grade and tooling-grade tokenizer, honest about what it is.</div>
+
+<script src="verify-engine.js"></script>
+<script src="tokenizer.js"></script>
+<script src="tokenizer-regex.js"></script>
+<script>
+"use strict";
+var R = OceanicCore.createRegexTokenizer;
+var B = OceanicCore.createTokenizer;   // the Basic sibling (0068), for the contrast test
+
+var suite = OceanicCore.createVerifier({ name: "Regex Tokenizer (build 0073)" });
+
+suite.test("factory boots; training is guarded; a vocabulary is not silently rewritten", function(a){
+  a.equal(typeof R, "function");
+  var t = R();
+  ["train","encode","decode","chunks","pattern","merges","vocabSize","tokenOf","stats","snapshot"].forEach(function(fn){
+    a.equal(typeof t[fn], "function", "exposes " + fn);
+  });
+  a.throws(function(){ t.train("", 300); }, "empty corpus refused");
+  a.throws(function(){ t.train("abc", 255); }, "vocabSize below the byte floor refused");
+  a.throws(function(){ t.train("abc", 300.5); }, "fractional vocabSize refused");
+  t.train("aabbaabb", 258);
+  a.throws(function(){ t.train("more", 300); }, "already trained — a vocabulary is not silently rewritten");
+});
+
+suite.test("untrained, it is exactly UTF-8: encode = bytes, decode = identity, vocab = 256", function(a){
+  var t = R();
+  a.equal(t.vocabSize(), 256);
+  a.deepEqual(t.encode("abc"), [97, 98, 99]);
+  a.equal(t.decode([97, 98, 99]), "abc");
+  a.deepEqual(t.merges(), []);
+});
+
+suite.test("the GPT-2 split keeps letters, digits, punctuation and spaces apart", function(a){
+  var t = R();
+  a.deepEqual(t.chunks("a1a1"), ["a","1","a","1"], "letters and digits never share a chunk");
+  a.deepEqual(t.chunks("the tide"), ["the"," tide"], "a leading space attaches to the word that follows");
+  a.deepEqual(t.chunks("hi!!!"), ["hi","!!!"], "punctuation splits off from the word");
+  a.deepEqual(t.chunks(""), [], "empty text splits to nothing");
+  a.ok(/\\p\{L\}/.test(t.pattern()) || t.pattern().indexOf("\\p{L}") >= 0, "the default pattern is unicode-aware");
+});
+
+suite.test("for a single all-letters word it IS the Basic tokenizer — the regex is a pre-split, not a different BPE", function(a){
+  // minbpe's canonical example is one all-letter chunk, so the split is a no-op
+  var r = R(); r.train("aaabdaaabac", 259);
+  var b = B(); b.train("aaabdaaabac", 259);
+  a.deepEqual(r.merges(), b.merges(), "identical merges to the Basic tokenizer");
+  a.deepEqual(r.encode("aaabdaaabac"), [258, 100, 258, 97, 99], "minbpe's canonical encoding");
+  a.equal(r.decode([258, 100, 258, 97, 99]), "aaabdaaabac");
+});
+
+suite.test("THE POINT — the pre-split forbids a merge the Basic tokenizer would make", function(a){
+  // 'a1a1a1a1': Basic sees the frequent pair 'a1' and merges it; Regex splits
+  // every letter from every digit, so no pair ever repeats inside a chunk.
+  var b = B(); var bout = b.train("a1a1a1a1", 260);
+  a.ok(bout.learned >= 1, "Basic learns at least one cross-category merge (" + bout.learned + ")");
+  var r = R(); var rout = r.train("a1a1a1a1", 260);
+  a.equal(rout.learned, 0, "Regex learns none — letters and digits are never adjacent within a chunk");
+  a.equal(r.vocabSize(), 256, "its vocabulary did not fuse across the boundary");
+  a.deepEqual(r.encode("a1a1a1a1"), [97,49,97,49,97,49,97,49], "so it encodes to the raw bytes");
+});
+
+suite.test("a merge NEVER crosses a chunk boundary — chunks encode independently", function(a){
+  var t = R();
+  t.train(" ab ab ab ab ab ab", 300);   // learns ' a' then ' ab' INSIDE the ' ab' chunks
+  a.ok(t.merges().length >= 1, "it did learn merges inside the chunks");
+  // the acid test: encoding a two-chunk string equals encoding each chunk and concatenating
+  a.deepEqual(t.encode(" ab ab"), t.encode(" ab").concat(t.encode(" ab")),
+              "the shared boundary produced no cross-chunk token");
+  // and no learned merge fuses a letter to the next chunk's leading space ('b'=98 then ' '=32)
+  var crosses = t.merges().some(function(m){ return m.pair[0] === 98 && m.pair[1] === 32; });
+  a.equal(crosses, false, "the (b, space) boundary pair was never merged");
+});
+
+suite.test("decode ∘ encode is IDENTITY — ascii, emoji, cyrillic, digits, punctuation", function(a){
+  var t = R();
+  t.train("the tide 🌊 ebbs 12 times, and the tide 🌊 flows — прилив и отлив!", 320);
+  ["plain ascii 42", "the tide 🌊 ebbs — прилив!!!", "Ω∞ OceanicOS · 3.14 · 🌊🌊🌊", ""].forEach(function(s){
+    a.equal(t.decode(t.encode(s)), s, JSON.stringify(s.slice(0, 24)) + " round-trips exactly");
+  });
+});
+
+suite.test("repetition still compresses within chunks — and stats() says by how much", function(a){
+  var t = R();
+  var corpus = "drop drop drop drop the drop into the ocean of drops, drop by drop by drop";
+  t.train(corpus, 300);
+  var s = t.stats(corpus);
+  a.ok(s.tokens < s.bytes, s.tokens + " tokens for " + s.bytes + " bytes");
+  a.ok(s.ratio > 1.3, "ratio " + s.ratio + " — the corpus taught it something");
+  a.equal(t.stats("").tokens, 0, "empty text is zero tokens");
+});
+
+suite.test("tokenOf shows what a token IS; unknown ids are refused with the reason", function(a){
+  var t = R();
+  t.train("aaabdaaabac", 259);
+  a.deepEqual(t.tokenOf(97), { id: 97, bytes: [97], text: "a" });
+  a.deepEqual(t.tokenOf(258).bytes, [97, 97, 97, 98], "'aaab' — the concatenated ancestry");
+  a.throws(function(){ t.tokenOf(999); }, "never learned");
+  a.throws(function(){ t.decode([256, 999]); }, "decode refuses unknown ids too");
+});
+
+suite.test("a trained tokenizer travels as JSON — snapshot carries the pattern AND merges", function(a){
+  var t = R();
+  var corpus = "the tide teaches the tide, 7 times over";
+  t.train(corpus, 300);
+  var snap = JSON.parse(t.snapshot());
+  a.equal(snap.algorithm, "minbpe/regex", "credit and variant travel with the artifact");
+  a.equal(snap.pattern, t.pattern(), "the split pattern travels too — without it the twin would split differently");
+  var again = R.load(t.snapshot());
+  a.equal(again.vocabSize(), t.vocabSize());
+  a.deepEqual(again.encode(corpus), t.encode(corpus), "the loaded twin encodes identically");
+  a.equal(again.decode(again.encode("tide 🌊 7")), "tide 🌊 7");
+  a.throws(function(){ R.load("not json"); }, "bad JSON refused");
+  a.throws(function(){ R.load(JSON.stringify({ some: "thing" })); }, "not a snapshot refused");
+  a.throws(function(){ R.load(JSON.stringify({ oceanicTokenizer: 1, algorithm: "minbpe/basic", merges: [] })); }, "wrong-variant snapshot refused");
+});
+
+suite.test("a custom split pattern is honored — and an invalid one is refused", function(a){
+  var t = R({ pattern: "\\S+|\\s+" });   // whitespace-only splitting
+  a.deepEqual(t.chunks("a1 b2"), ["a1", " ", "b2"], "digits and letters may now share a chunk");
+  a.throws(function(){ R({ pattern: "(" }); }, "an uncompilable pattern is refused, not swallowed");
+});
+
+suite.test("encode/decode input guards", function(a){
+  var t = R();
+  a.throws(function(){ t.encode(42); }, "encode wants a string");
+  a.throws(function(){ t.decode("abc"); }, "decode wants an array");
+  a.throws(function(){ t.chunks(7); }, "chunks wants a string");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Regex Tokenizer";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var t = R();
+  var corpus = "take a drop, leave a drop, return a better drop — the ocean remembers all 100 drops";
+  t.train(corpus, 300);
+  var sentence = "return 2 better drops!";
+  var ids = t.encode(sentence);
+  var live = document.getElementById("live");
+  ids.forEach(function(id, i){
+    var chip = document.createElement("span");
+    chip.className = "c" + (i % 4);
+    var tk = t.tokenOf(id);
+    chip.textContent = JSON.stringify(tk.text).slice(1, -1) + " ·" + id;
+    live.appendChild(chip);
+  });
+  var s = t.stats(sentence);
+  document.getElementById("liveline").textContent =
+    "chunks: [" + t.chunks(sentence).map(function(c){return JSON.stringify(c);}).join(", ") + "] — " +
+    "\"" + sentence + "\" → " + s.tokens + " tokens for " + s.bytes + " bytes (ratio " + s.ratio + "), " +
+    "and decode(encode(x)) === x: " + (t.decode(ids) === sentence ? "✓" : "✗");
+})();
+</script>
+</body>
+</html>

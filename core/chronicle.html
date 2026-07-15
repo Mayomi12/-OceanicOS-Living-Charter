@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ω∞ Chronicle — the history explorer</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:940px;margin:auto}
+  h1{font-size:20px} h2{font-size:14px;color:#8fb3c4;margin-top:26px;border-bottom:1px solid #12455f;padding-bottom:5px}
+  .sub{color:#8fb3c4;font-size:13px}
+  label{display:block;margin-top:10px;color:#8fb3c4;font-size:13px}
+  input[type=text]{width:100%;box-sizing:border-box;background:#062033;color:#e8f6fb;border:1px solid #12455f;padding:8px;font-family:inherit;font-size:13px;margin-top:4px}
+  input[type=range]{width:100%;margin-top:8px}
+  button{background:#0a2a3f;color:#38bdf8;border:1px solid #12455f;padding:7px 14px;font-family:inherit;font-size:13px;cursor:pointer;margin-top:10px;margin-right:8px}
+  button:hover{background:#123a55}
+  table{border-collapse:collapse;width:100%;margin-top:10px}
+  td,th{border:1px solid #12455f;padding:5px 10px;font-size:12px;text-align:left}
+  tr.rec{cursor:pointer} tr.rec:hover td{background:#08283c}
+  tr.sel td{background:#123a55}
+  .cur{color:#34d399} .sup{color:#8fb3c4;text-decoration:line-through}
+  pre{background:#062033;border:1px solid #12455f;padding:12px;font-size:12px;white-space:pre-wrap;margin-top:10px}
+  #chain span{display:inline-block;margin:2px;padding:3px 7px;border:1px solid #12455f;border-radius:4px;font-size:12px;background:#0a2a3f}
+  #chain span.now{border-color:#34d399;color:#34d399}
+  .kv{font-size:13px;margin-top:8px} .kv b{color:#e8f6fb}
+  .note{color:#8fb3c4;font-size:12px;margin-top:18px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ Chronicle</h1>
+<p class="sub">A history explorer over the append-only Memory Ocean. Nothing here is ever erased: a correction appends a new record that supersedes the old, and both stay. Pick a record to see its lineage (<b>Provenance</b>, 0075); drag through time to watch the ocean's past states reappear (<b>Retrospect</b>, 0076). The lenses are the verified capabilities — this page is only glass.</p>
+
+<h2>1 · The ocean <span class="sub" id="tally"></span></h2>
+<table id="records"><thead><tr><th>at</th><th>id</th><th>type</th><th>content</th><th>status</th></tr></thead><tbody></tbody></table>
+
+<h2>2 · Grow the history (nothing is overwritten)</h2>
+<label for="addText">A new fact (its own new lineage)</label>
+<input id="addText" type="text" value="the north buoy light is steady red" />
+<button id="addBtn">Append fact</button>
+<label for="amendText">A correction to the selected record's lineage</label>
+<input id="amendText" type="text" value="" />
+<button id="amendBtn">Append correction</button>
+<div id="growline" class="sub"></div>
+
+<h2>3 · Provenance of the selected record</h2>
+<div id="chain" aria-live="polite"></div>
+<pre id="prov"></pre>
+
+<h2>4 · Retrospect — drag through time</h2>
+<label for="slider" id="tlabel">As of t = —</label>
+<input id="slider" type="range" min="0" max="100" value="100" step="1" aria-label="as-of time" />
+<div class="kv">As of that moment, the ocean's <b>current view</b> was:</div>
+<pre id="asof"></pre>
+<div class="kv" id="stateline"></div>
+<div class="kv" id="changeline"></div>
+
+<div class="note">Like every surface here, Chronicle holds itself to the house law: the reasoning is done by the verified lenses (core/provenance.js, core/retrospect.js, both in Continuous Verification) — the page only draws what they report. It writes to the ocean only when YOU append; the lenses never write at all.</div>
+
+<script src="memory.js"></script>
+<script src="provenance.js"></script>
+<script src="retrospect.js"></script>
+<script>
+"use strict";
+function el(id){ return document.getElementById(id); }
+function esc(s){ return String(s).replace(/[&<>]/g, function(c){ return { "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]; }); }
+
+/* ---- a demo ocean on a clock we drive ---- */
+var clock = 0, seq = 0;
+var mem = OceanicCore.createMemory({ now: function(){ return clock; }, idgen: function(){ seq += 1; return "rec-" + seq; } });
+var prov = OceanicCore.createProvenance({ memory: mem });
+var retro = OceanicCore.createRetrospect({ memory: mem });
+
+function tick(){ clock += 100; return clock; }
+function seed(){
+  clock = 100; var a = mem.remember({ body: "the channel is 4 metres deep", type: "knowledge", source: "survey" });
+  tick();       var b = mem.remember({ body: "the reef gate opens at high water", type: "knowledge", source: "pilot" });
+  tick();       mem.amend(a.id, { body: "the channel is 3.5 metres deep (silting)", type: "knowledge", source: "resurvey" });
+  tick();       mem.amend(a.id === a.id ? mem.timeline()[2].id : a.id, { body: "the channel is 3 metres deep (dredge overdue)", type: "knowledge", source: "resurvey" });
+  tick();       mem.remember({ body: "the east mooring is condemned", type: "knowledge", source: "harbourmaster" });
+  return a.id;  // the channel lineage's origin
+}
+var selectedId = seed();
+
+/* ---- render ---- */
+function statusOf(r){
+  var t = prov.trail(r.id);
+  return t.current ? { cls: "cur", text: "current" } : { cls: "sup", text: "→ " + prov.trail(r.id).descendants[0].id };
+}
+function renderRecords(){
+  var tbody = el("records").querySelector("tbody");
+  tbody.innerHTML = "";
+  mem.timeline().forEach(function(r){
+    var st = statusOf(r);
+    var tr = document.createElement("tr");
+    tr.className = "rec" + (r.id === selectedId ? " sel" : "");
+    tr.innerHTML = "<td>" + r.at + "</td><td>" + r.id + "</td><td>" + r.type + "</td><td>" + esc(r.body) +
+                   "</td><td class='" + st.cls + "'>" + st.text + "</td>";
+    tr.addEventListener("click", function(){ selectedId = r.id; renderAll(); });
+    tbody.appendChild(tr);
+  });
+  var s = mem.status();
+  el("tally").textContent = "— " + s.count + " records · " + s.current + " current · " + s.superseded + " superseded (none erased)";
+}
+function renderProvenance(){
+  var t = prov.trail(selectedId);
+  var chain = el("chain"); chain.innerHTML = "";
+  t.chain.forEach(function(r, i){
+    if (i) chain.appendChild(document.createTextNode(" → "));
+    var span = document.createElement("span");
+    if (r.id === t.currentId) span.className = "now";
+    span.textContent = r.id + (r.id === t.currentId ? " (current)" : "");
+    chain.appendChild(span);
+  });
+  el("prov").textContent = prov.explain(selectedId);
+}
+function renderRetrospect(){
+  var sp = retro.span();
+  var slider = el("slider");
+  slider.min = 0;
+  slider.max = (sp.last || 100);
+  if (+slider.value > +slider.max) slider.value = slider.max;
+  var t = +slider.value;
+  el("tlabel").textContent = "As of t = " + t + "  (the ocean spans " + sp.first + " … " + sp.last + ")";
+  var view = retro.asOf(t);
+  el("asof").textContent = view.length
+    ? view.map(function(r){ return "· " + r.body + "   [" + r.id + " @" + r.at + "]"; }).join("\n")
+    : "(nothing had been recorded yet)";
+  var state = retro.stateOf(selectedId, t);
+  el("stateline").innerHTML = "The <b>selected</b> lineage read: " +
+    (state ? "&ldquo;" + esc(state.body) + "&rdquo; <span class='sub'>(" + state.id + ")</span>" : "<span class='sub'>— not yet begun as of t</span>");
+  el("changeline").innerHTML = "Records that had become current by t: <b>" + retro.changesBetween(0, t).length + "</b> of " + mem.timeline().length + ".";
+}
+function renderAll(){ renderRecords(); renderProvenance(); renderRetrospect(); }
+
+/* ---- interactions ---- */
+el("addBtn").addEventListener("click", function(){
+  var body = el("addText").value.trim();
+  if (!body) { el("growline").textContent = "type a fact first"; return; }
+  tick(); var r = mem.remember({ body: body, type: "knowledge", source: "you" });
+  selectedId = r.id;
+  el("growline").textContent = "appended " + r.id + " at t=" + r.at + " — a new lineage begins";
+  el("slider").value = clock;
+  renderAll();
+});
+el("amendBtn").addEventListener("click", function(){
+  var body = el("amendText").value.trim();
+  if (!body) { el("growline").textContent = "type the correction first"; return; }
+  var current = prov.currentOf(selectedId);   // amend the CURRENT tip of the selected lineage
+  if (!current) { el("growline").textContent = "select a record to correct"; return; }
+  tick(); var r = mem.amend(current.id, { body: body, type: current.type, source: "you" });
+  selectedId = r.id;
+  el("growline").textContent = "appended correction " + r.id + " superseding " + current.id + " — the old record still stands";
+  el("slider").value = clock;
+  el("amendText").value = "";
+  renderAll();
+});
+el("slider").addEventListener("input", renderRetrospect);
+
+renderAll();
+</script>
+</body>
+</html>

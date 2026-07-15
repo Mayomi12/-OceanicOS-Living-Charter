@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Search</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .t-observation{color:#38bdf8} .t-decision{color:#fbbf24} .t-knowledge{color:#34d399} .t-project{color:#c084fc} .t-build{color:#8fb3c4}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Search</b> (build 0026, Stage 4 · Intelligence). Ranked query across the whole Memory Ocean. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — one query across every kind of record</h2>
+<table id="results"><tr><th>Type</th><th>Score</th><th>Match</th></tr></table>
+<div class="note">The query "channel" reaches an observation, a decision, a piece of knowledge, and a project at once — ranked by relevance, body weighted above metadata.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="search.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+// a seeded ocean shared by most tests
+function seeded(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "search-test" });
+  os.start();
+  var o1 = os.reality.observe({ observation: "the north channel shoals at low tide", source: "survey" });
+  os.reality.verify(o1.meta.oid, "sonar confirmed");
+  os.reality.observe({ observation: "a whale was sighted near the harbor mouth" });
+  var d1 = os.decisions.propose({ question: "reroute around the channel shoals?", options: ["reroute","hold"], grounds: [o1.meta.oid] });
+  os.decisions.decide(d1.meta.did, "reroute");
+  os.knowledge.learn({ statement: "the channel is unsafe below half tide", topics: ["tides","channel","safety"], grounds: [o1.meta.oid] });
+  os.projects.open({ name: "Winter channel routing", goal: "no groundings" });
+  return { os: os, oid: o1.meta.oid, did: d1.meta.did };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Search (build 0026)" });
+
+suite.test("factory requires an OceanicOS or a Memory", function(a){
+  a.equal(typeof OceanicCore.createSearch, "function");
+  a.throws(function(){ OceanicCore.createSearch({}); });
+  var s = OceanicCore.createSearch({ oceanic: seeded().os });
+  a.equal(typeof s.search, "function");
+  a.equal(typeof s.facets, "function");
+});
+
+suite.test("an empty query returns nothing", function(a){
+  var s = OceanicCore.createSearch({ oceanic: seeded().os });
+  a.deepEqual(s.search(""), []);
+  a.deepEqual(s.search("   "), []);
+  a.deepEqual(s.search(null), []);
+});
+
+suite.test("search reaches across EVERY record type at once", function(a){
+  var s = OceanicCore.createSearch({ oceanic: seeded().os });
+  var types = s.search("channel").map(function(r){ return r.type; }).sort();
+  a.deepEqual(types, ["decision","knowledge","observation","project"], "one query, four kinds of record");
+});
+
+suite.test("results carry the logical id of the thing found, a snippet and a status", function(a){
+  var f = seeded();
+  var s = OceanicCore.createSearch({ oceanic: f.os });
+  var whale = s.search("whale");
+  a.equal(whale.length, 1);
+  a.equal(whale[0].type, "observation");
+  a.ok(whale[0].snippet.indexOf("whale") >= 0, "snippet contains the match");
+  a.equal(whale[0].status, "pending");
+  var chan = s.search("channel").filter(function(r){ return r.type === "observation"; })[0];
+  a.equal(chan.id, f.oid, "the observation's oid is returned");
+});
+
+suite.test("the body is weighted above metadata in ranking", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  os.start();
+  // "tide" appears in this body
+  os.reality.observe({ observation: "the tide is turning" });
+  // "tide" appears only in metadata (a topic), not the statement body
+  os.knowledge.learn({ statement: "spring surges are strong", topics: ["tide"] });
+  var s = OceanicCore.createSearch({ oceanic: os });
+  var r = s.search("tide");
+  a.equal(r.length, 2, "both matched");
+  a.equal(r[0].type, "observation", "the body match ranks first");
+  a.ok(r[0].score > r[1].score, "and scores higher");
+});
+
+suite.test("more matches rank higher; ties break by recency", function(a){
+  var s = OceanicCore.createSearch({ oceanic: seeded().os });
+  var r = s.search("channel shoals");
+  // the decision and the observation both contain both words → top two
+  a.ok(r[0].matched === 2 && r[1].matched === 2, "the two-token matches come first");
+  a.ok(r[0].score >= r[2].score, "two-token matches outrank one-token");
+});
+
+suite.test("the { all } option requires every token to match", function(a){
+  var s = OceanicCore.createSearch({ oceanic: seeded().os });
+  var any = s.search("channel shoals");
+  var all = s.search("channel shoals", { all: true });
+  a.ok(all.length < any.length, "AND is stricter than OR");
+  all.forEach(function(r){ a.equal(r.matched, 2, "each result matched both tokens"); });
+});
+
+suite.test("results can be filtered by type and by status", function(a){
+  var s = OceanicCore.createSearch({ oceanic: seeded().os });
+  var k = s.search("channel", { type: "knowledge" });
+  a.equal(k.length, 1); a.equal(k[0].type, "knowledge");
+  var v = s.search("channel", { status: "verified" });
+  a.equal(v.length, 1); a.equal(v[0].status, "verified");
+});
+
+suite.test("limit caps the number of results", function(a){
+  var s = OceanicCore.createSearch({ oceanic: seeded().os });
+  a.ok(s.search("the", { limit: 2 }).length <= 2);
+});
+
+suite.test("facets() count matches per type", function(a){
+  var s = OceanicCore.createSearch({ oceanic: seeded().os });
+  var f = s.facets("channel");
+  a.equal(f.total, 4);
+  a.deepEqual(f.byType, { observation: 1, decision: 1, knowledge: 1, project: 1 });
+});
+
+suite.test("only CURRENT records are searched — superseded history is not surfaced", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  os.start();
+  var k = os.knowledge.learn({ statement: "tides follow the sun", topics: ["astronomy"] });
+  os.knowledge.revise(k.meta.kid, { statement: "tides follow the moon, and weakly the sun" });
+  var s = OceanicCore.createSearch({ oceanic: os });
+  var moon = s.search("moon");
+  a.equal(moon.length, 1, "the current revision is found");
+  var results = s.search("tides");
+  a.equal(results.length, 1, "the superseded original is NOT a separate result");
+});
+
+suite.test("search also works given a bare Memory instance", function(a){
+  var f = seeded();
+  var s = OceanicCore.createSearch({ memory: f.os.memory });
+  a.equal(s.search("channel").length, 4);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Search";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var s = OceanicCore.createSearch({ oceanic: seeded().os });
+  var table = document.getElementById("results");
+  s.search("channel").forEach(function(r){
+    var row = table.insertRow();
+    var c = row.insertCell(); c.textContent = r.type.toUpperCase(); c.className = "t-" + r.type;
+    row.insertCell().textContent = String(r.score);
+    row.insertCell().textContent = r.snippet;
+  });
+})();
+</script>
+</body>
+</html>

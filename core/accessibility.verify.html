@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Accessibility</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .high{color:#fb7185} .medium{color:#fbbf24}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Accessibility</b> (build 0060, Stage 8 · Stewardship). The audit made a capability — seven mechanical checks any Document must answer, applied to our own pages first. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — this very page, audited by the capability it verifies</h2>
+<table id="self"><tr><th>Check</th><th>Verdict</th><th>Detail</th></tr></table>
+<div id="selfline" class="note"></div>
+<div class="note">The limit, stated as always: these are the checks a machine can make honestly — necessary, not sufficient. Real accessibility is confirmed by people, with assistive technology, not by a score.</div>
+
+<script src="verify-engine.js"></script>
+<script src="accessibility.js"></script>
+<script>
+"use strict";
+function docOf(html){ return new DOMParser().parseFromString(html, "text/html"); }
+var CLEAN = '<!DOCTYPE html><html lang="en"><head><title>A well-kept page</title></head><body>' +
+  '<h1>Harbor</h1><h2>Berths</h2>' +
+  '<img src="x.png" alt="the harbor at dusk">' +
+  '<label for="q">Search</label><input id="q">' +
+  '<button>Cast off</button><a href="#log">Open the log</a>' +
+  '<iframe title="the tide chart" src="about:blank"></iframe>' +
+  '</body></html>';
+
+var suite = OceanicCore.createVerifier({ name: "Accessibility (build 0060)" });
+
+suite.test("factory exposes audit; input is guarded", function(a){
+  a.equal(typeof OceanicCore.createAccessibility, "function");
+  var A = OceanicCore.createAccessibility();
+  a.equal(typeof A.audit, "function");
+  a.throws(function(){ A.audit(null); }, "no document");
+  a.throws(function(){ A.audit({}); }, "not a document");
+});
+
+suite.test("a well-kept page passes all seven checks — posture ACCESSIBLE", function(a){
+  var A = OceanicCore.createAccessibility();
+  var rep = A.audit(docOf(CLEAN));
+  a.deepEqual(rep.findings, [], JSON.stringify(rep.findings.map(function(f){ return f.id; })));
+  a.equal(rep.passed.length, 7);
+  a.equal(rep.posture, "accessible");
+  a.equal(rep.score, 100);
+  a.ok(rep.note.indexOf("not sufficient") >= 0, "the limit is in the report itself");
+});
+
+suite.test("A11Y-LANG and A11Y-TITLE — the silent openings are caught", function(a){
+  var A = OceanicCore.createAccessibility();
+  var rep = A.audit(docOf('<!DOCTYPE html><html><head></head><body><h1>x</h1></body></html>'));
+  var ids = rep.findings.map(function(f){ return f.id; });
+  a.ok(ids.indexOf("A11Y-LANG") >= 0, "missing lang found");
+  a.ok(ids.indexOf("A11Y-TITLE") >= 0, "missing title found");
+  rep.findings.forEach(function(f){ a.equal(f.severity, "high"); a.ok(f.fix.length > 5, f.id + " carries its fix"); });
+  a.equal(rep.posture, "excluding");
+});
+
+suite.test("A11Y-ALT — a missing alt is a finding; an EMPTY alt is decorative and fine", function(a){
+  var A = OceanicCore.createAccessibility();
+  var bad = A.audit(docOf('<html lang="en"><head><title>t</title></head><body><img src="a.png"><img src="b.png" alt=""></body></html>'));
+  var altF = bad.findings.filter(function(f){ return f.id === "A11Y-ALT"; })[0];
+  a.ok(altF, "found");
+  a.equal(altF.count, 1, "only the truly missing one — decorative alt='' is respected");
+  a.equal(altF.sample, "img", "the offender is pointed at");
+});
+
+suite.test("A11Y-LABELS — every way of labelling counts; the unlabelled are caught", function(a){
+  var A = OceanicCore.createAccessibility();
+  var doc = docOf('<html lang="en"><head><title>t</title></head><body>' +
+    '<label for="a">A</label><input id="a">' +      // label[for]
+    '<label>B <input id="b"></label>' +              // wrapped
+    '<input id="c" aria-label="C">' +                // aria-label
+    '<input id="d" type="hidden">' +                 // hidden is exempt
+    '<input id="e">' +                               // the offender
+    '</body></html>');
+  var rep = A.audit(doc);
+  var f = rep.findings.filter(function(x){ return x.id === "A11Y-LABELS"; })[0];
+  a.ok(f, "found");
+  a.equal(f.count, 1, "exactly the unlabelled control");
+  a.equal(f.sample, "input#e");
+});
+
+suite.test("A11Y-NAMES — a button that announces as just 'button' is caught", function(a){
+  var A = OceanicCore.createAccessibility();
+  var doc = docOf('<html lang="en"><head><title>t</title></head><body>' +
+    '<button></button>' +                            // nameless
+    '<button aria-label="close"></button>' +         // named by aria
+    '<a href="#x"></a>' +                            // nameless link
+    '<a href="#y">Open the ledger</a>' +
+    '</body></html>');
+  var f = A.audit(doc).findings.filter(function(x){ return x.id === "A11Y-NAMES"; })[0];
+  a.ok(f, "found");
+  a.equal(f.count, 2, "the empty button and the empty link");
+});
+
+suite.test("A11Y-HEADINGS — a skipped level is a hole in the outline", function(a){
+  var A = OceanicCore.createAccessibility();
+  var bad = A.audit(docOf('<html lang="en"><head><title>t</title></head><body><h1>a</h1><h4>b</h4></body></html>'));
+  var f = bad.findings.filter(function(x){ return x.id === "A11Y-HEADINGS"; })[0];
+  a.ok(f, "h1 → h4 caught");
+  a.equal(f.severity, "medium");
+  var ok = A.audit(docOf('<html lang="en"><head><title>t</title></head><body><h1>a</h1><h2>b</h2><h2>c</h2><h3>d</h3><h2>e</h2></body></html>'));
+  a.equal(ok.findings.filter(function(x){ return x.id === "A11Y-HEADINGS"; }).length, 0, "stepping back up is fine");
+});
+
+suite.test("A11Y-FRAMES — an unlabeled door is named", function(a){
+  var A = OceanicCore.createAccessibility();
+  var f = A.audit(docOf('<html lang="en"><head><title>t</title></head><body><iframe src="about:blank"></iframe></body></html>'))
+    .findings.filter(function(x){ return x.id === "A11Y-FRAMES"; })[0];
+  a.ok(f, "found");
+  a.ok(f.fix.indexOf("title=") >= 0);
+});
+
+suite.test("the posture ladder holds: high → excluding, medium-only → usable", function(a){
+  var A = OceanicCore.createAccessibility();
+  var mediumOnly = A.audit(docOf('<html lang="en"><head><title>t</title></head><body><h1>a</h1><h3>skip</h3></body></html>'));
+  a.equal(mediumOnly.posture, "usable");
+  a.ok(mediumOnly.score < 100 && mediumOnly.score >= 80);
+  var withHigh = A.audit(docOf('<html><head></head><body></body></html>'));
+  a.equal(withHigh.posture, "excluding");
+  a.ok(withHigh.score < mediumOnly.score);
+});
+
+suite.test("DOGFOOD — this verification page itself audits ACCESSIBLE", function(a){
+  var A = OceanicCore.createAccessibility();
+  var rep = A.audit(document);
+  a.deepEqual(rep.findings.map(function(f){ return f.id; }), [], "our own glass is clean");
+  a.equal(rep.posture, "accessible");
+});
+
+suite.test("the audit never mutates the page it reads", function(a){
+  var A = OceanicCore.createAccessibility();
+  var doc = docOf(CLEAN);
+  var before = doc.documentElement.outerHTML;
+  A.audit(doc); A.audit(doc);
+  a.equal(doc.documentElement.outerHTML, before, "pure");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Accessibility";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof: audit THIS page ---- */
+(function(){
+  var A = OceanicCore.createAccessibility();
+  var rep = A.audit(document);
+  var table = document.getElementById("self");
+  rep.checks.forEach(function(c){
+    var row = table.insertRow();
+    row.insertCell().textContent = c.id + " — " + c.name;
+    var v = row.insertCell();
+    v.textContent = c.verdict === "pass" ? "✓" : "✗ " + c.severity.toUpperCase();
+    v.className = c.verdict === "pass" ? "pass" : c.severity;
+    row.insertCell().textContent = c.detail;
+  });
+  document.getElementById("selfline").textContent = rep.headline + " · " + rep.note;
+})();
+</script>
+</body>
+</html>

@@ -1,27 +1,19 @@
 /*
  * Ω∞ OceanicOS :: Terminal
- * Build 0026 · Stage 3 (Applications) · zero-runtime (plain browser or any JS engine)
+ * Build 0023 · Stage 3 (Applications) · zero-runtime (plain browser or any JS engine)
  *
- * The keyboard-native application. The CLI (0012) is a pure interpreter; the
- * Harbor gave it a small console pane. The Terminal elevates it to the whole
- * screen — and everything that makes a terminal more than an input box is
- * verifiable LOGIC, so it lives here, not in the page: readline-style history
- * recall, tab completion over the CLI's real verbs, and a scrollback
- * discipline. As with every application, createTerminal() is a view-model and
- * terminal.html is only the shell that draws it.
+ * A real terminal for OceanicOS. The Harbor (0019) is a dashboard with a console
+ * corner; the Terminal is the console taken seriously — scrollback, command
+ * history you can walk with the arrow keys, and Tab completion. As everywhere,
+ * the LOGIC is separated from the screen so it can be verified: createTerminal()
+ * is a REPL controller; terminal.html is only the glass.
  *
- *   - run(line)        → execute through the CLI; scrollback gains the prompt
- *                        line and the result; history remembers; never throws.
- *   - recall(up|down)  → walk the history like readline (clamped at the
- *                        oldest, empty past the newest).
- *   - complete(prefix) → the CLI's own verbs, filtered; unique match completes
- *                        to "verb "; ambiguity extends to the shared prefix.
- *   - clear()          → clears the VIEW only. The Charter's no-erasure law
- *                        governs the Memory Ocean, not a screen: every record
- *                        captured through this terminal stays in the ocean.
- *
- * Dependencies (CLI/Logger factories) resolve from the OceanicCore namespace
- * the Core scripts populate; pass createTerminal({ oceanic, deps }) to inject.
+ * It wraps the CLI (0012) and adds the ergonomics a terminal is expected to have:
+ *   - submit(line)      run a command; append input + output to the scrollback.
+ *                       Never throws (the CLI already reports errors).
+ *   - historyPrev/Next  walk previously submitted commands, shell-style.
+ *   - complete(partial) Tab completion over the command vocabulary.
+ *   - built-ins clear / history that belong to the terminal, not the system.
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory(root);
@@ -29,109 +21,99 @@
 })(typeof self !== "undefined" ? self : this, function (root) {
   "use strict";
 
-  var VERSION = "0.26.0";
+  var BUILTINS = ["clear", "history"];
+
+  function commonPrefix(strings) {
+    if (!strings.length) return "";
+    var p = strings[0];
+    for (var i = 1; i < strings.length; i++) {
+      var s = strings[i];
+      var j = 0;
+      while (j < p.length && j < s.length && p[j] === s[j]) j++;
+      p = p.slice(0, j);
+      if (!p) break;
+    }
+    return p;
+  }
 
   function createTerminal(options) {
     options = options || {};
-    var os = options.oceanic;
-    if (!os || typeof os.start !== "function" || !os.status) {
-      throw new TypeError("createTerminal requires an assembled OceanicOS: createTerminal({ oceanic })");
+    var cli = options.cli;
+    if (!cli) {
+      var D = options.deps || (root && root.OceanicCore) || {};
+      if (!options.oceanic || typeof D.createCLI !== "function") {
+        throw new TypeError("createTerminal requires a CLI or an assembled OceanicOS: createTerminal({ cli }) or createTerminal({ oceanic })");
+      }
+      cli = D.createCLI({ oceanic: options.oceanic });
     }
-    var D = options.deps || (root && root.OceanicCore) || {};
-    function need(fn, what) { if (typeof fn !== "function") throw new Error("createTerminal: " + what + " factory is unavailable — load the Core scripts or pass { deps }"); return fn; }
+    if (typeof cli.exec !== "function" || typeof cli.commands === "undefined") throw new TypeError("createTerminal: cli must be an OceanicOS CLI");
 
-    var logger = options.logger || need(D.createLogger, "logger")({ now: options.now, minLevel: "info" });
-    var cli    = options.cli    || need(D.createCLI, "cli")({ oceanic: os });
+    var prompt = options.prompt || "oceanic>";
+    var scrollback = [];       // { type: "in" | "out" | "err" | "sys", text }
+    var history = [];          // submitted command lines, oldest first
+    var cursor = 0;            // history navigation cursor
 
-    var lines = [];        // scrollback: { kind: "sys"|"cmd"|"out"|"err", text }
-    var past = [];         // history, oldest first
-    var cursor = -1;       // -1 = at the fresh prompt (nothing recalled)
-    var ran = 0;
-    var booted = false;
+    function push(type, text) { scrollback.push({ type: type, text: text }); }
 
-    function verbs() { return (cli.commands || []).slice(); }
+    function vocabulary() { return BUILTINS.concat(cli.commands).slice().sort(); }
 
-    function write(kind, text) { lines.push({ kind: kind, text: String(text) }); }
-
-    function boot() {
-      if (booted) return status();
-      var b = os.start();
-      booted = true;
-      write("sys", "ƆCEANiC_OS terminal v" + VERSION + " — system v" + os.version + " booted on pulse " + b.pulse + ". Type 'help'.");
-      logger.info("terminal online — OceanicOS v" + os.version + " booted on pulse " + b.pulse);
-      return status();
-    }
-
-    function run(line) {
+    function submit(line) {
       var text = String(line == null ? "" : line).trim();
-      write("cmd", "oceanic> " + text);
+      if (!text) return { ok: true, blank: true, scrollback: getScrollback() };
+      history.push(text);
+      cursor = history.length;
+      push("in", prompt + " " + text);
+
+      var verb = text.split(/\s+/)[0].toLowerCase();
+      if (verb === "clear") { scrollback = []; return { ok: true, command: "clear", scrollback: getScrollback() }; }
+      if (verb === "history") {
+        history.forEach(function (h, i) { push("out", String(i + 1).padStart ? String(i + 1).padStart(3, " ") + "  " + h : (i + 1) + "  " + h); });
+        return { ok: true, command: "history", data: history.slice(), scrollback: getScrollback() };
+      }
+
       var r = cli.exec(text);
-      if (r.ok) { if (r.message) write("out", r.message); }
-      else write("err", "! " + r.error);
-      if (text) {
-        if (past[past.length - 1] !== text) past.push(text);   // consecutive duplicates stored once
-        ran += 1;
-        if (r.ok) logger.info("$ " + text);
-        else logger.warn("$ " + text + " — " + r.error);
-      }
-      cursor = -1;                                             // a run resets recall
-      return { ok: r.ok, command: r.command, message: r.ok ? r.message : "", error: r.ok ? null : r.error, output: r.ok ? r.message : r.error };
+      if (r.ok) { if (r.message) String(r.message).split("\n").forEach(function (l) { push("out", l); }); }
+      else push("err", "! " + r.error);
+      return { ok: r.ok, command: r.command, message: r.ok ? r.message : "", error: r.ok ? null : r.error, scrollback: getScrollback() };
     }
 
-    function recall(direction) {
-      if (!past.length) return "";
-      if (direction === "up") {
-        if (cursor === -1) cursor = past.length - 1;
-        else if (cursor > 0) cursor -= 1;                      // clamped at the oldest
-        return past[cursor];
-      }
-      if (direction === "down") {
-        if (cursor === -1) return "";
-        cursor += 1;
-        if (cursor >= past.length) { cursor = -1; return ""; } // past the newest = fresh prompt
-        return past[cursor];
-      }
-      return "";
+    // shell-style history walking: prev = older, next = newer (empty past the end)
+    function historyPrev() {
+      if (!history.length) return "";
+      if (cursor > 0) cursor--;
+      return history[cursor] || "";
+    }
+    function historyNext() {
+      if (cursor < history.length) cursor++;
+      return cursor >= history.length ? "" : (history[cursor] || "");
     }
 
-    function sharedPrefix(list) {
-      var p = list[0];
-      for (var i = 1; i < list.length; i++) {
-        while (list[i].indexOf(p) !== 0) p = p.slice(0, -1);
-      }
-      return p;
+    function complete(partial) {
+      partial = String(partial == null ? "" : partial);
+      var head = partial.split(/\s+/)[0]; // complete the verb only
+      var cands = vocabulary().filter(function (c) { return c.indexOf(head) === 0; });
+      var value = head;
+      if (cands.length === 1) value = cands[0];
+      else if (cands.length > 1) value = commonPrefix(cands) || head;
+      return { matches: cands, value: value };
     }
 
-    function complete(prefix) {
-      var p = String(prefix == null ? "" : prefix);
-      var matches = verbs().filter(function (v) { return v.indexOf(p) === 0; });
-      if (!matches.length) return { matches: [], completion: p };
-      if (matches.length === 1) return { matches: matches, completion: matches[0] + " " };
-      return { matches: matches, completion: sharedPrefix(matches) };
-    }
-
-    function clear() {
-      lines = [];                                              // the view only — the ocean keeps everything
-      write("sys", "screen cleared — the ocean remembers (" + os.status().memory.count + " records).");
-      return { ok: true };
-    }
-
-    function status() {
-      return { version: VERSION, booted: booted, commands: ran, history: past.length, scrollback: lines.length };
-    }
+    function getScrollback() { return scrollback.slice(); }
+    function getHistory() { return history.slice(); }
+    function status() { return { lines: scrollback.length, commands: history.length, vocabulary: vocabulary().length }; }
 
     return {
-      version: VERSION,
-      boot: boot, run: run, recall: recall, complete: complete, clear: clear,
-      scrollback: function () { return lines.map(function (l) { return { kind: l.kind, text: l.text }; }); },
-      history: function () { return past.slice(); },
-      verbs: verbs,
-      status: status,
+      prompt: prompt,
+      submit: submit,
+      historyPrev: historyPrev, historyNext: historyNext,
+      complete: complete, vocabulary: vocabulary,
+      scrollback: getScrollback, history: getHistory,
       help: function () { return cli.help(); },
-      oceanic: os, cli: cli, logger: logger
+      status: status,
+      cli: cli
     };
   }
 
-  createTerminal.VERSION = VERSION;
+  createTerminal.BUILTINS = BUILTINS.slice();
   return createTerminal;
 });

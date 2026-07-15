@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Maintenance</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .p1{color:#fb7185;font-weight:bold} .p2{color:#fbbf24} .p3{color:#38bdf8} .p4{color:#8fb3c4}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Maintenance</b> (build 0061, Stage 8 · Stewardship). The steward's standing chore list — one derived, prioritized upkeep sweep composing the Planner (0029) · Preservation (0059) · Governance (0043) · Monitor (0047). Advisory: it writes nothing; stewards act. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — a neglected harbor, swept</h2>
+<table id="chores"><tr><th>#</th><th>Priority</th><th>Kind</th><th>Target</th><th>Reason</th></tr></table>
+<div id="choreline" class="note"></div>
+<div class="note">"Nothing to do" is a real answer and the sweep says it plainly. Thresholds are policy, not accident — how old is stale is the steward's standard, injected, not hardcoded fate.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="graph.js"></script>
+<script src="reason.js"></script>
+<script src="learn.js"></script>
+<script src="evaluate.js"></script>
+<script src="plan.js"></script>
+<script src="monitor.js"></script>
+<script src="identity.js"></script>
+<script src="governance.js"></script>
+<script src="preservation.js"></script>
+<script src="maintenance.js"></script>
+<script>
+"use strict";
+function makeClock(start){ var t = start || 1000; return function(){ return (t += 10); }; }
+function rig(opts){
+  opts = opts || {};
+  var clock = opts.clock || makeClock();
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "maint-test" });
+  os.start();
+  var log = OceanicCore.createLogger({ now: clock });
+  var M = OceanicCore.createMaintenance({ oceanic: os, logger: log, now: opts.now || clock,
+    monitor: opts.monitor, thresholds: opts.thresholds });
+  return { os: os, log: log, M: M, clock: clock };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Maintenance (build 0061)" });
+
+suite.test("factory requires the ocean and exposes the sweep", function(a){
+  a.equal(typeof OceanicCore.createMaintenance, "function");
+  a.throws(function(){ OceanicCore.createMaintenance({}); }, "no oceanic");
+  var f = rig();
+  ["chores","sweep","status"].forEach(function(fn){ a.equal(typeof f.M[fn], "function", "exposes " + fn); });
+});
+
+suite.test("a kept system has NOTHING TO DO — and says so plainly", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "all well", source: "watch" });
+  f.os.reality.verify(o.meta.oid);
+  a.deepEqual(f.M.chores(), []);
+  var s = f.M.sweep();
+  a.equal(s.clear, true);
+  a.ok(s.headline.indexOf("NOTHING TO DO") === 0, s.headline);
+});
+
+suite.test("unsound reality becomes a priority-1 REPAIR chore (the Planner's voice)", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "a rumor", source: "dock" });
+  f.os.decisions.propose({ question: "act?", options: ["y","n"], grounds: [o.meta.oid] });
+  f.os.reality.reject(o.meta.oid);
+  var repairs = f.M.chores().filter(function(c){ return c.kind === "repair"; });
+  a.equal(repairs.length, 1);
+  a.equal(repairs[0].priority, 1);
+  a.ok(repairs[0].reason.indexOf("REJECTED") >= 0, repairs[0].reason);
+});
+
+suite.test("pending observations become VERDICT chores", function(a){
+  var f = rig();
+  f.os.reality.observe({ observation: "await one", source: "s" });
+  f.os.reality.observe({ observation: "await two", source: "s" });
+  var verdicts = f.M.chores().filter(function(c){ return c.kind === "verdict"; });
+  a.equal(verdicts.length, 2);
+  verdicts.forEach(function(c){ a.equal(c.priority, 3); });
+});
+
+suite.test("a proposal open past its welcome is STALLED — the threshold is policy", function(a){
+  var f = rig({ thresholds: { staleProposalMs: 100 } });
+  var I = OceanicCore.createIdentity({ oceanic: f.os });
+  I.register({ name: "Kai", role: "steward", id: "kai" });
+  I.register({ name: "Mara", id: "mara" });
+  var G = OceanicCore.createGovernance({ oceanic: f.os, identity: I });
+  G.propose({ title: "Fresh idea", rationale: "just arrived", by: "mara" });
+  a.equal(f.M.chores().filter(function(c){ return c.kind === "stalled-proposal"; }).length, 0,
+    "a fresh proposal is not stalled");
+  for (var i = 0; i < 15; i++) f.clock(); // time passes beyond the 100ms standard
+  var stalled = f.M.chores().filter(function(c){ return c.kind === "stalled-proposal"; });
+  a.equal(stalled.length, 1);
+  a.ok(stalled[0].reason.indexOf("quiet no") >= 0, "a stalled change is a quiet no");
+  G.review("fresh-idea", "kai", "endorse");
+  G.ratify("fresh-idea", "kai");
+  a.equal(f.M.chores().filter(function(c){ return c.kind === "stalled-proposal"; }).length, 0,
+    "a decided proposal is off the list");
+});
+
+suite.test("a damaged archive on the shelf is a priority-1 chore, named by label", function(a){
+  var f = rig();
+  f.os.reality.observe({ observation: "the tuesday cargo manifest", source: "clerk" });
+  var P = OceanicCore.createPreservation({ now: f.clock });
+  var good = P.seal(f.os.memory, { label: "monday" });
+  var bad = P.seal(f.os.memory, { label: "tuesday" }).replace("cargo", "corgo"); // one vowel of rot
+  var damage = f.M.chores({ shelf: [good, bad] }).filter(function(c){ return c.kind === "archive-damage"; });
+  a.equal(damage.length, 1);
+  a.equal(damage[0].priority, 1);
+  a.ok(damage[0].target.indexOf("tuesday") >= 0, "named");
+  a.ok(damage[0].reason.indexOf("re-seal") >= 0, "with its fix");
+});
+
+suite.test("the Monitor's cautions ride at priority 4", function(a){
+  var f = rig();
+  var quiet = OceanicCore.createMonitor({ oceanic: f.os }); // no logger → LOG warns; unbooted? booted. HB pass, LOG warn
+  var M = OceanicCore.createMaintenance({ oceanic: f.os, monitor: quiet, now: f.clock });
+  var cautions = M.chores().filter(function(c){ return c.kind === "caution"; });
+  a.ok(cautions.length >= 1, "the unobserved-system warning arrives as a chore");
+  cautions.forEach(function(c){ a.equal(c.priority, 4); });
+});
+
+suite.test("chores are ordered: P1 repairs before P3 verdicts before P4 cautions", function(a){
+  var f = rig();
+  var quiet = OceanicCore.createMonitor({ oceanic: f.os });
+  var M = OceanicCore.createMaintenance({ oceanic: f.os, monitor: quiet, now: f.clock });
+  var o = f.os.reality.observe({ observation: "a rumor", source: "dock" });
+  f.os.decisions.propose({ question: "act?", options: ["y","n"], grounds: [o.meta.oid] });
+  f.os.reality.reject(o.meta.oid);                              // P1
+  f.os.reality.observe({ observation: "await me", source: "s" }); // P3
+  var list = M.chores();
+  for (var i = 1; i < list.length; i++) a.ok(list[i-1].priority <= list[i].priority, "non-decreasing priority");
+  a.equal(list[0].kind, "repair");
+  a.equal(list[0].order, 1);
+});
+
+suite.test("sweep writes its summary to the operational log; the ocean is untouched", function(a){
+  var f = rig();
+  f.os.reality.observe({ observation: "await me", source: "s" });
+  var infoBefore = f.log.status().counts.info, warnBefore = f.log.status().counts.warn;
+  var records = f.os.memory.status().count;
+  var s = f.M.sweep();
+  a.equal(s.total, 1);
+  a.ok(f.log.status().counts.warn > warnBefore, "chores present → warn");
+  a.equal(f.os.memory.status().count, records, "advisory — nothing written to the ocean");
+  var o = f.os.reality.observe({ observation: "x", source: "s" });
+  f.os.reality.verify(o.meta.oid);
+  f.os.reality.verify(f.os.reality.byStatus("pending")[0].meta.oid);
+  f.M.sweep();
+  a.ok(f.log.status().counts.info > infoBefore, "a clear sweep logs at info");
+});
+
+suite.test("status() is the quiet read — counts by priority and kind, no log entry", function(a){
+  var f = rig();
+  f.os.reality.observe({ observation: "await me", source: "s" });
+  var emitted = f.log.status().emitted;
+  var st = f.M.status();
+  a.equal(f.log.status().emitted, emitted, "quiet");
+  a.deepEqual(st, { chores: 1, clear: false, byPriority: { 3: 1 }, byKind: { verdict: 1 } });
+});
+
+suite.test("the sweep headline points at the first chore to do", function(a){
+  var f = rig();
+  var o = f.os.reality.observe({ observation: "a rumor", source: "dock" });
+  f.os.decisions.propose({ question: "act?", options: ["y","n"], grounds: [o.meta.oid] });
+  f.os.reality.reject(o.meta.oid);
+  var s = f.M.sweep();
+  a.ok(s.headline.indexOf("start with: repair") >= 0, s.headline);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Maintenance";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var f = rig({ thresholds: { staleProposalMs: 100 } });
+  var quiet = OceanicCore.createMonitor({ oceanic: f.os });
+  var M = OceanicCore.createMaintenance({ oceanic: f.os, monitor: quiet, now: f.clock, thresholds: { staleProposalMs: 100 } });
+  // neglect, arranged:
+  var o = f.os.reality.observe({ observation: "a rumor about the south bar", source: "dock" });
+  f.os.decisions.propose({ question: "close the bar?", options: ["y","n"], grounds: [o.meta.oid] });
+  f.os.reality.reject(o.meta.oid);
+  f.os.reality.observe({ observation: "two ships inbound, unconfirmed", source: "watch" });
+  var I = OceanicCore.createIdentity({ oceanic: f.os });
+  I.register({ name: "Mara", id: "mara" });
+  var G = OceanicCore.createGovernance({ oceanic: f.os, identity: I });
+  G.propose({ title: "Repaint the day marks", rationale: "faded", by: "mara" });
+  for (var i = 0; i < 15; i++) f.clock();
+  var P = OceanicCore.createPreservation({ now: f.clock });
+  var shelf = [P.seal(f.os.memory, { label: "spring" }),
+               P.seal(f.os.memory, { label: "summer" }).replace("rumor", "rumeur")];
+  var s = M.sweep({ shelf: shelf });
+  var table = document.getElementById("chores");
+  s.chores.forEach(function(c){
+    var row = table.insertRow();
+    row.insertCell().textContent = c.order;
+    var p = row.insertCell(); p.textContent = "P" + c.priority; p.className = "p" + c.priority;
+    row.insertCell().textContent = c.kind;
+    row.insertCell().textContent = c.target;
+    row.insertCell().textContent = c.reason;
+  });
+  document.getElementById("choreline").textContent = s.headline;
+})();
+</script>
+</body>
+</html>

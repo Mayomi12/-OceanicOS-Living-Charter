@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Templates</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .builtin{color:#38bdf8}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Templates</b> (build 0051, Stage 7 · Ecosystem). Reusable starter oceans — a newcomer begins from a working, verified shape instead of zero. Composes the whole catalogue; re-implements nothing. Suite runs on the <b>Verification Engine</b> (0004). <b>Opens Stage 7.</b></div>
+<div id="suite"></div>
+
+<h2>Live proof — the catalogue, each shape instantiated</h2>
+<table id="cat"><tr><th>Template</th><th>Description</th><th>Instantiated</th></tr></table>
+<div class="note">Every instance is a fully real OceanicOS obeying every law the engines enforce — templates create starting points, not authority. The ops-watch's CI/CD refuses to release until real verification is wired: a template must not fake a green light.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="automation.js"></script>
+<script src="versioning.js"></script>
+<script src="graph.js"></script>
+<script src="search.js"></script>
+<script src="reason.js"></script>
+<script src="learn.js"></script>
+<script src="evaluate.js"></script>
+<script src="monitor.js"></script>
+<script src="cicd.js"></script>
+<script src="identity.js"></script>
+<script src="workspaces.js"></script>
+<script src="shared-knowledge.js"></script>
+<script src="governance.js"></script>
+<script src="templates.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+
+var suite = OceanicCore.createVerifier({ name: "Templates (build 0051)" });
+
+suite.test("factory boots, exposes the surface, and ships three built-ins", function(a){
+  a.equal(typeof OceanicCore.createTemplates, "function");
+  var T = OceanicCore.createTemplates();
+  ["register","list","instantiate"].forEach(function(fn){ a.equal(typeof T[fn], "function", "exposes " + fn); });
+  var names = T.list().map(function(t){ return t.name; });
+  a.deepEqual(names, ["governance-body","ops-watch","research-workspace"]);
+  T.list().forEach(function(t){
+    a.equal(t.builtin, true, t.name + " is built-in");
+    a.ok(t.description.length > 20, t.name + " says what it is for");
+  });
+});
+
+suite.test("research-workspace: a working inquiry, not an empty shell", function(a){
+  var T = OceanicCore.createTemplates();
+  var inst = T.instantiate("research-workspace", { now: clock });
+  a.deepEqual(inst.seeded, { actors: 2, workspaces: 1, gathered: 1 });
+  var ws = inst.parts.workspaces.get("inquiry");
+  a.equal(ws.name, "Inquiry");
+  a.deepEqual(inst.parts.workspaces.members("inquiry").map(function(m){ return m.actor; }).sort(),
+    ["lead","researcher-one"]);
+  a.equal(inst.parts.identity.get("lead").role, "steward", "the lead can pass verdicts");
+  var known = inst.parts.sharedKnowledge.knows("inquiry");
+  a.equal(known.length, 1);
+  a.equal(known[0].status, "verified", "the founding observation is already verified");
+});
+
+suite.test("ops-watch: monitored, logged, and HONEST about verification", function(a){
+  var T = OceanicCore.createTemplates();
+  var inst = T.instantiate("ops-watch", { now: clock });
+  a.equal(inst.parts.monitor.healthy(), true, "the fresh watch is healthy");
+  a.equal(inst.parts.monitor.releaseGate().release, true);
+  var r = inst.parts.cicd.release({});
+  a.equal(r.ok, false, "release REFUSED — no verification wired yet");
+  a.ok(r.report.steps[0].error.indexOf("fake a green light") >= 0, r.report.steps[0].error);
+  // wire real verification in and the same shape releases
+  var inst2 = T.instantiate("ops-watch", { now: clock, verify: function(){ return { verdict: "PASS", total: 44, passed: 44, failed: 0 }; } });
+  a.equal(inst2.parts.cicd.release({}).ok, true, "with verification wired, it ships");
+});
+
+suite.test("governance-body: quorum of two, enforced from the first minute", function(a){
+  var T = OceanicCore.createTemplates();
+  var inst = T.instantiate("governance-body", { now: clock });
+  var G = inst.parts.governance;
+  G.propose({ title: "First motion", rationale: "we need a rule", by: "member-one" });
+  G.review("first-motion", "member-two", "endorse");
+  a.throws(function(){ G.ratify("first-motion", "chair"); }, "one endorsement is not quorum");
+  G.review("first-motion", "chair", "endorse");
+  a.equal(G.ratify("first-motion", "chair").status, "ratified", "two endorsements ratify");
+});
+
+suite.test("instances are fully isolated from one another", function(a){
+  var T = OceanicCore.createTemplates();
+  var one = T.instantiate("research-workspace", { now: clock });
+  var two = T.instantiate("research-workspace", { now: clock });
+  one.oceanic.reality.observe({ observation: "only in instance one", source: "lead" });
+  a.ok(one.oceanic.memory.status().count > two.oceanic.memory.status().count, "two never saw it");
+  a.equal(two.parts.sharedKnowledge.knows("inquiry").length, 1, "two's inquiry is untouched");
+});
+
+suite.test("every instance is a REAL OceanicOS — beating, append-only, exportable", function(a){
+  var T = OceanicCore.createTemplates();
+  var inst = T.instantiate("governance-body", { now: clock });
+  a.ok(inst.oceanic.heartbeat.status().pulse >= 1, "it beats");
+  a.equal(typeof inst.oceanic.memory.remember, "function");
+  var mem = inst.oceanic.memory;
+  ["delete","forget","clear"].forEach(function(op){ a.equal(mem[op], undefined, "no " + op + "()"); });
+  var snap = JSON.parse(inst.oceanic.exportSnapshot());
+  a.ok(snap.records.length >= 3, "the whole instance is one exportable snapshot");
+});
+
+suite.test("registering a custom template extends the catalogue", function(a){
+  var T = OceanicCore.createTemplates();
+  T.register("harbor-log", {
+    description: "a single keeper writing a verified harbor log",
+    setup: function(ctx){
+      var o = ctx.oceanic.reality.observe({ observation: "harbor opened", source: "keeper" });
+      ctx.oceanic.reality.verify(o.meta.oid);
+      ctx.parts.firstEntry = o.meta.oid;
+      return { entries: 1 };
+    }
+  });
+  a.equal(T.list().length, 4);
+  var inst = T.instantiate("harbor-log");
+  a.deepEqual(inst.seeded, { entries: 1 });
+  a.equal(inst.oceanic.reality.get(inst.parts.firstEntry).meta.status, "verified");
+  a.equal(inst.parts.firstEntry ? false : true, false);
+  var custom = T.list().filter(function(t){ return t.name === "harbor-log"; })[0];
+  a.equal(custom.builtin, false, "contributed, not built-in");
+});
+
+suite.test("registration is guarded — no anonymous, undescribed, or duplicate shapes", function(a){
+  var T = OceanicCore.createTemplates();
+  a.throws(function(){ T.register("", { description: "x", setup: function(){} }); }, "needs a name");
+  a.throws(function(){ T.register("x", { setup: function(){} }); }, "needs a description");
+  a.throws(function(){ T.register("x", { description: "says what for" }); }, "needs a setup");
+  a.throws(function(){ T.register("ops-watch", { description: "clash", setup: function(){} }); }, "duplicate refused");
+  a.throws(function(){ T.instantiate("ghost"); }, "unknown template refused");
+});
+
+suite.test("a template that breaks mid-setup fails LOUDLY, naming itself", function(a){
+  var T = OceanicCore.createTemplates();
+  T.register("doomed", { description: "a template that cannot stand up", setup: function(){ throw new Error("the mast snapped"); } });
+  var threw = false;
+  try { T.instantiate("doomed"); }
+  catch(e){ threw = true; a.ok(e.message.indexOf("doomed") >= 0 && e.message.indexOf("mast snapped") >= 0, e.message); }
+  a.equal(threw, true, "instantiate threw rather than returning a half-built world");
+});
+
+suite.test("options flow through — a template can be tuned at instantiation", function(a){
+  var T = OceanicCore.createTemplates();
+  var inst = T.instantiate("ops-watch", { now: clock, thresholds: { pendingBacklog: 1 } });
+  inst.oceanic.reality.observe({ observation: "await 1", source: "s" });
+  inst.oceanic.reality.observe({ observation: "await 2", source: "s" });
+  var byId = {}; inst.parts.monitor.checks().forEach(function(c){ byId[c.id] = c; });
+  a.equal(byId.PENDING.verdict, "warn", "the tuned threshold took effect");
+});
+
+suite.test("the seeded summary tells the truth about the ocean", function(a){
+  var T = OceanicCore.createTemplates();
+  var inst = T.instantiate("research-workspace", { now: clock });
+  a.equal(inst.parts.identity.list().length, inst.seeded.actors);
+  a.equal(inst.parts.workspaces.list().length, inst.seeded.workspaces);
+  a.equal(inst.parts.sharedKnowledge.knows("inquiry").length, inst.seeded.gathered);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Templates";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var T = OceanicCore.createTemplates();
+  var table = document.getElementById("cat");
+  T.list().forEach(function(t){
+    var inst = T.instantiate(t.name, { now: clock });
+    var row = table.insertRow();
+    var n = row.insertCell(); n.textContent = t.name; n.className = "builtin";
+    row.insertCell().textContent = t.description;
+    var c = row.insertCell(); c.textContent = "✓ " + JSON.stringify(inst.seeded); c.className = "pass";
+  });
+})();
+</script>
+</body>
+</html>

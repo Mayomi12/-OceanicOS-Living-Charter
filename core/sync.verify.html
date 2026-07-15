@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Synchronization</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .ship{color:#38bdf8} .shore{color:#fbbf24} .both{color:#34d399} .conflict{color:#fb7185}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Synchronization</b> (build 0046, Stage 6 · Infrastructure). Two oceans reunite — a deterministic union of timelines in which nothing is ever erased and divergence is surfaced, not silently resolved. Composes <b>Memory</b> (0005) snapshots; <b>Store</b> (0024) is the persistence seam. Suite runs on the <b>Verification Engine</b> (0004). <b>Opens Stage 6.</b></div>
+<div id="suite"></div>
+
+<h2>Live proof — the ship returns to the shore station</h2>
+<table id="journey"><tr><th>Origin</th><th>Record</th><th>Fate after merge</th></tr></table>
+<div id="journeyline" class="note"></div>
+<div class="note">Both sides amended the same observation while apart. After the merge BOTH heads stand, the original remains beneath them, and the conflict is reported for a human to resolve with a further open amendment.</div>
+
+<script src="verify-engine.js"></script>
+<script src="memory.js"></script>
+<script src="sync.js"></script>
+<script>
+"use strict";
+function makeClock(start){ var t = start; return function(){ return (t += 10); }; }
+function makeStorage(){ var d = {}; return { getItem: function(k){ return (k in d) ? d[k] : null; }, setItem: function(k,v){ d[k] = v; } }; }
+/* hydrate a fresh Memory from a snapshot string (the Store 0024 seam) */
+function hydrated(snapshot, clock){
+  var s = makeStorage();
+  s.setItem("oceanicos.memory", snapshot);
+  return OceanicCore.createMemory({ storage: s, now: clock });
+}
+/* a common ancestor, then two diverged branches */
+function diverged(){
+  var base = OceanicCore.createMemory({ now: makeClock(1000) });
+  var shared = base.remember({ type: "observation", body: "the harbor light is lit", source: "keeper", confidence: "high" });
+  var snap = base.exportSnapshot();
+  var ship  = hydrated(snap, makeClock(2000));
+  var shore = hydrated(snap, makeClock(3000));
+  var s1 = ship.remember({ type: "observation", body: "whales feeding at the north bank", source: "ship", confidence: "medium" });
+  var s2 = ship.remember({ type: "decision",    body: "hold course past the bank",        source: "ship", confidence: "high" });
+  var h1 = shore.remember({ type: "observation", body: "storm glass falling at the station", source: "shore", confidence: "high" });
+  return { shared: shared, ship: ship, shore: shore, s1: s1, s2: s2, h1: h1 };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Synchronization (build 0046)" });
+
+suite.test("factory exposes diff, merge and conflicts; inputs are guarded", function(a){
+  a.equal(typeof OceanicCore.createSync, "function");
+  var S = OceanicCore.createSync();
+  ["diff","merge","conflicts"].forEach(function(fn){ a.equal(typeof S[fn], "function", "exposes " + fn); });
+  a.throws(function(){ S.merge("not json at all", "{}"); }, "bad JSON refused");
+  a.throws(function(){ S.merge({}, { records: [] }); }, "no records array refused");
+  a.throws(function(){ S.merge({ records: [{ body: "no id" }] }, { records: [] }); }, "a record without an id refused");
+});
+
+suite.test("identical oceans: nothing to exchange, nothing duplicated", function(a){
+  var S = OceanicCore.createSync();
+  var m = OceanicCore.createMemory({ now: makeClock(1000) });
+  m.remember({ type: "observation", body: "one calm sea", source: "s", confidence: "high" });
+  var d = S.diff(m, m);
+  a.equal(d.onlyA.length, 0); a.equal(d.onlyB.length, 0); a.equal(d.shared, 1);
+  var g = S.merge(m, m);
+  a.equal(g.total, 1); a.equal(g.added.fromA, 0); a.equal(g.added.fromB, 0);
+});
+
+suite.test("diff sees exactly what each diverged side lacks", function(a){
+  var S = OceanicCore.createSync();
+  var f = diverged();
+  var d = S.diff(f.ship, f.shore);
+  a.equal(d.shared, 1, "the common ancestor record");
+  a.equal(d.onlyA.length, 2, "the ship's two records");
+  a.equal(d.onlyB.length, 1, "the shore's one record");
+  a.deepEqual(d.onlyA.map(function(r){ return r.id; }).sort(), [f.s1.id, f.s2.id].sort());
+  a.equal(d.onlyB[0].id, f.h1.id);
+});
+
+suite.test("merge is a union — shared history deduplicated, both sides' work kept", function(a){
+  var S = OceanicCore.createSync();
+  var f = diverged();
+  var g = S.merge(f.ship, f.shore);
+  a.equal(g.total, 4, "1 shared + 2 ship + 1 shore");
+  a.equal(g.added.fromA, 2); a.equal(g.added.fromB, 1);
+  var ids = g.records.map(function(r){ return r.id; });
+  [f.shared.id, f.s1.id, f.s2.id, f.h1.id].forEach(function(id){ a.ok(ids.indexOf(id) >= 0, id + " survived the merge"); });
+});
+
+suite.test("merge is deterministic and commutative — both directions agree, time-ordered", function(a){
+  var S = OceanicCore.createSync();
+  var f = diverged();
+  var ab = S.merge(f.ship, f.shore).records.map(function(r){ return r.id; });
+  var ba = S.merge(f.shore, f.ship).records.map(function(r){ return r.id; });
+  a.deepEqual(ab, ba, "merge(a,b) === merge(b,a)");
+  var g = S.merge(f.ship, f.shore).records;
+  for (var i = 1; i < g.length; i++) a.ok(g[i-1].at <= g[i].at, "timeline stays in time order");
+});
+
+suite.test("the merged snapshot hydrates into a real, working Memory", function(a){
+  var S = OceanicCore.createSync();
+  var f = diverged();
+  var g = S.merge(f.ship, f.shore);
+  var reunited = hydrated(g.snapshot, makeClock(9000));
+  a.equal(reunited.status().count, 4, "all four records aboard");
+  a.equal(reunited.recall({ type: "observation" }).length, 3);
+  a.equal(reunited.recall({ type: "decision" }).length, 1);
+  var more = reunited.remember({ type: "observation", body: "life goes on after the merge", source: "s", confidence: "medium" });
+  a.ok(more.id, "the reunited ocean accepts new records");
+});
+
+suite.test("history is preserved through a merge — a superseded record still exists", function(a){
+  var S = OceanicCore.createSync();
+  var f = diverged();
+  var amended = f.ship.amend(f.s1.id, { type: "observation", body: "whales feeding — CONFIRMED by second watch", source: "ship", confidence: "high" });
+  var g = S.merge(f.ship, f.shore);
+  a.equal(g.total, 5, "the amendment is a fifth record, not a replacement");
+  var reunited = hydrated(g.snapshot, makeClock(9000));
+  a.equal(reunited.recall({ type: "observation" }).length, 3, "current: shared + amended whale + shore storm");
+  a.ok(reunited.get(f.s1.id), "the superseded original is still retrievable");
+  a.equal(reunited.get(amended.id).supersedes, f.s1.id, "and the supersession link survived");
+});
+
+suite.test("DIVERGENT amendments: both heads survive and the conflict is reported", function(a){
+  var S = OceanicCore.createSync();
+  var f = diverged();
+  var shipHead  = f.ship.amend(f.shared.id,  { type: "observation", body: "harbor light OUT (seen from sea)",   source: "ship",  confidence: "high" });
+  var shoreHead = f.shore.amend(f.shared.id, { type: "observation", body: "harbor light relit after refueling", source: "shore", confidence: "high" });
+  var g = S.merge(f.ship, f.shore);
+  a.equal(g.conflicts.length, 1, "one divergence detected");
+  a.equal(g.conflicts[0].supersededId, f.shared.id);
+  a.deepEqual(g.conflicts[0].heads, [shipHead.id, shoreHead.id].sort(), "both heads named");
+  var reunited = hydrated(g.snapshot, makeClock(9000));
+  var current = reunited.recall({ type: "observation" }).map(function(r){ return r.id; });
+  a.ok(current.indexOf(shipHead.id) >= 0, "the ship's head stands");
+  a.ok(current.indexOf(shoreHead.id) >= 0, "the shore's head stands too — neither silently wins");
+  a.ok(current.indexOf(f.shared.id) < 0, "the superseded original is not current");
+  a.ok(reunited.get(f.shared.id), "…but it is never erased");
+});
+
+suite.test("a clean merge reports no conflicts", function(a){
+  var S = OceanicCore.createSync();
+  var f = diverged();
+  a.deepEqual(S.merge(f.ship, f.shore).conflicts, []);
+  a.deepEqual(S.diff(f.ship, f.shore).conflicts, []);
+});
+
+suite.test("inputs are flexible: Memory, snapshot string, parsed object — all agree", function(a){
+  var S = OceanicCore.createSync();
+  var f = diverged();
+  var asMemory = S.merge(f.ship, f.shore).total;
+  var asString = S.merge(f.ship.exportSnapshot(), f.shore.exportSnapshot()).total;
+  var asParsed = S.merge(JSON.parse(f.ship.exportSnapshot()), JSON.parse(f.shore.exportSnapshot())).total;
+  a.equal(asMemory, 4); a.equal(asString, 4); a.equal(asParsed, 4);
+});
+
+suite.test("conflicts() audits a single ocean for unresolved divergence", function(a){
+  var S = OceanicCore.createSync();
+  var f = diverged();
+  f.ship.amend(f.shared.id,  { type: "observation", body: "light out",   source: "ship",  confidence: "high" });
+  f.shore.amend(f.shared.id, { type: "observation", body: "light relit", source: "shore", confidence: "high" });
+  var g = S.merge(f.ship, f.shore);
+  var audit = S.conflicts(g.snapshot);
+  a.equal(audit.length, 1, "the merged ocean itself reports its open divergence");
+  a.deepEqual(S.conflicts(f.ship), [], "an undiverged ocean reports none");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Synchronization";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var S = OceanicCore.createSync();
+  var f = diverged();
+  var shipHead  = f.ship.amend(f.shared.id,  { type: "observation", body: "harbor light OUT (seen from sea)",   source: "ship",  confidence: "high" });
+  var shoreHead = f.shore.amend(f.shared.id, { type: "observation", body: "harbor light relit after refueling", source: "shore", confidence: "high" });
+  var g = S.merge(f.ship, f.shore);
+  var reunited = hydrated(g.snapshot, makeClock(9000));
+  var currentIds = {};
+  reunited.recall({}).forEach(function(r){ currentIds[r.id] = true; });
+  var table = document.getElementById("journey");
+  function row(origin, cls, body, fate){
+    var r = table.insertRow();
+    var c = r.insertCell(); c.textContent = origin; c.className = cls;
+    r.insertCell().textContent = body;
+    r.insertCell().textContent = fate;
+  }
+  g.records.forEach(function(r){
+    var origin = r.source === "ship" ? "SHIP" : r.source === "shore" ? "SHORE" : "SHARED";
+    var cls = r.source === "ship" ? "ship" : r.source === "shore" ? "shore" : "both";
+    var isHead = (r.id === shipHead.id || r.id === shoreHead.id);
+    var fate = currentIds[r.id] ? (isHead ? "current — conflicting head (human to resolve)" : "current")
+                                : "superseded — preserved beneath the heads";
+    if (isHead) cls = "conflict";
+    row(origin, cls, r.body, fate);
+  });
+  document.getElementById("journeyline").textContent =
+    "merged: " + g.total + " records (" + g.added.fromA + " from the ship, " + g.added.fromB + " from the shore, rest shared) — " +
+    g.conflicts.length + " open conflict surfaced, 0 records lost.";
+})();
+</script>
+</body>
+</html>

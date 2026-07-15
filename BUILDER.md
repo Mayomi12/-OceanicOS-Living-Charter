@@ -51,10 +51,16 @@ Observe. Verify. Build **one** capability. Test. Record. Release. Continue.
 
 | Stage | Status | Frozen / released as |
 |-------|--------|------------------------|
-| 0 — Foundation | ✅ COMPLETE | `charter-v1.0.0` tag · Core heartbeat `core/` |
+| 0 — Foundation | ✅ COMPLETE | `charter-v1.0.0` tag · Core heartbeat `core/` · Vision docs (0034, 0042, 0044) · **Specification v1.0 + Compatibility suite** ✅ (`SPECIFICATION.md` + `core/compat.js`, 0045) |
 | 1 — Core | ✅ COMPLETE (8/8) | Heartbeat ✅ (0003) · Verification Engine ✅ (0004) · Memory ✅ (0005) · Build Registry ✅ (0006) · Reality Engine ✅ (0007) · Decision Engine ✅ (0008) · Knowledge Engine ✅ (0009) · Projects Engine ✅ (`core/projects-engine.js`, 0010) |
 | 2 — Builder | ✅ COMPLETE (8/8) | Kernel ✅ (0011) · CLI ✅ (0012) · Continuous Verification ✅ (0013) · Logging ✅ (0014) · Versioning ✅ (0015) · Automation ✅ (0016) · API ✅ (0017) · Documentation ✅ (`core/docs.js`, 0018) |
-| 3 — Applications | ✅ COMPLETE (7/7) | Web — Harbor ✅ (0019) · Developer SDK ✅ (0020) · AI Agents ✅ (`core/agent.js`, 0021) · Mobile ✅ (`core/mobile.js`, 0024) · Desktop ✅ (`core/desktop.js`, 0025) · Terminal ✅ (`core/terminal.js`, 0026) · Extensions ✅ (`core/extensions.js`, 0027) |
-| 4–8 | 🌊 open water | — |
+| 3 — Applications | ✅ COMPLETE (7/7) | Web — Harbor ✅ (0019) · Developer SDK ✅ (0020) · AI Agents ✅ (0021) · Extensions ✅ (0022) · Terminal ✅ (0023) · Mobile — persistent app + Store ✅ (0024) · Desktop ✅ (`core/desktop.js`, 0025) |
+| 4 — Intelligence | ✅ COMPLETE (8/8) | Search ✅ (0026) · Knowledge Graph ✅ (0027) · Reasoning ✅ (0028) · Planning ✅ (0029) · Learning ✅ (0030) · Recommendation ✅ (0031) · Simulation ✅ (0032) · Evaluation ✅ (`core/evaluate.js`, 0033) |
+| 5 — Collaboration | ✅ COMPLETE (8/8) | Users — Identity ✅ (0035) · Permissions ✅ (0036) · Workspaces ✅ (0037) · Teams ✅ (0038) · Organizations ✅ (0039) · Communities ✅ (0040) · Shared Knowledge ✅ (0041) · Governance ✅ (`core/governance.js`, 0043) |
+| 6 — Infrastructure | ✅ COMPLETE | Local ✅ + Offline ✅ (zero-runtime + Store, 0024) · Synchronization ✅ (0046) · Monitoring ✅ (0047) · CI/CD ✅ (0048) · Deployment ✅ (0049) · Cloud/Containers ✅ (`core/containers.js`, 0050) |
+| 7 — Ecosystem | ✅ COMPLETE (8/8) | Plugins ✅ (Extensions, 0022) · Open Source ✅ (this repo) · Templates ✅ (0051) · Education ✅ (0052) · Public APIs + Developer Platform ✅ (0053) · Research ✅ (0054) · Community — The Commons ✅ (`core/commons.js`, 0055) |
+| 8 — Stewardship | ✅ COMPLETE (7/7) | Security ✅ (0056) · Privacy ✅ (0057) · Migration ✅ (0058) · Preservation ✅ (0059) · Accessibility ✅ (0060) · Maintenance ✅ (0061) · Continuous Improvement ✅ (`core/improve.js`, 0062) |
+
+**ALL NINE STAGES COMPLETE** — 57 verified capabilities, builds 0001–0062, Continuous Verification green at **56/56 suites · 657 assertions · 0 failures** ([core/verify-all.html](core/verify-all.html)). Per the Final Law, completion is not an end: the last capability built is the one that proposes the next. **Continue. ∞**
 
 See [BUILD_LOG.md](BUILD_LOG.md) for every verified capability.

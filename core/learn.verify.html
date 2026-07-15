@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Learning</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .good{color:#34d399} .bad{color:#fb7185} .na{color:#8fb3c4}
+  .k-reversal{color:#fbbf24} .k-rejection{color:#fb7185} .k-revision{color:#38bdf8}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Learning</b> (build 0030, Stage 4 · Intelligence). Draws durable lessons from the ocean's own history. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — reliability learned from evidence</h2>
+<table id="sources"><tr><th>Source</th><th>Observations</th><th>Verified</th><th>Rejected</th><th>Reliability</th></tr></table>
+<h2>Lessons from history</h2>
+<table id="lessons"><tr><th>Kind</th><th>Subject</th><th>What was learned</th></tr></table>
+<div class="note">Nothing here was assumed — every reliability score and every lesson was computed from records the ocean still holds, superseded ones included.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="learn.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+
+function historied(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "learn-test" });
+  os.start();
+  // buoy-7 — reliable
+  var a = os.reality.observe({ observation: "tide 3m", source: "buoy-7" }); os.reality.verify(a.meta.oid);
+  var b = os.reality.observe({ observation: "tide 4m", source: "buoy-7" }); os.reality.verify(b.meta.oid);
+  // rumor — unreliable (verified then rejected twice)
+  var c = os.reality.observe({ observation: "a kraken", source: "rumor" }); os.reality.verify(c.meta.oid); os.reality.reject(c.meta.oid, "folklore");
+  var d = os.reality.observe({ observation: "a sea serpent", source: "rumor" }); os.reality.verify(d.meta.oid); os.reality.reject(d.meta.oid, "driftwood");
+  // unattributed, pending — no verdict yet
+  os.reality.observe({ observation: "something out there" });
+  // a reversed decision
+  var oX = os.reality.observe({ observation: "a reef", source: "buoy-7" }); os.reality.verify(oX.meta.oid);
+  var dec = os.decisions.propose({ question: "reroute past the reef?", options: ["y","n"], grounds: [oX.meta.oid] });
+  os.decisions.decide(dec.meta.did, "y"); os.decisions.reverse(dec.meta.did, "reef later charted passable");
+  // revised knowledge
+  var k = os.knowledge.learn({ statement: "tides follow the sun", topics: ["astronomy"] });
+  os.knowledge.revise(k.meta.kid, { statement: "tides follow the moon" });
+  os.knowledge.revise(k.meta.kid, { statement: "tides follow the moon, weakly the sun" });
+  return { os: os, dec: dec.meta.did, k: k.meta.kid, kraken: c.meta.oid };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Learning (build 0030)" });
+
+suite.test("factory requires an assembled OceanicOS", function(a){
+  a.equal(typeof OceanicCore.createLearner, "function");
+  a.throws(function(){ OceanicCore.createLearner({}); });
+  var L = OceanicCore.createLearner({ oceanic: historied().os });
+  ["sources","unreliableSources","lessons","summary"].forEach(function(fn){ a.equal(typeof L[fn], "function", "exposes " + fn); });
+});
+
+suite.test("source reliability is learned from verified vs rejected outcomes", function(a){
+  var L = OceanicCore.createLearner({ oceanic: historied().os });
+  var by = {}; L.sources().forEach(function(s){ by[s.source] = s; });
+  a.equal(by["buoy-7"].reliability, 1, "buoy-7 verified every time");
+  a.equal(by["buoy-7"].verified, 3);
+  a.equal(by["rumor"].reliability, 0, "rumor was rejected every time");
+  a.equal(by["rumor"].rejected, 2);
+});
+
+suite.test("a source with no verdict yet has null reliability, not a guessed one", function(a){
+  var L = OceanicCore.createLearner({ oceanic: historied().os });
+  var un = L.sources().filter(function(s){ return s.source === "(unattributed)"; })[0];
+  a.equal(un.reliability, null);
+  a.equal(un.pending, 1);
+});
+
+suite.test("sources are ranked least-reliable first (where a verdict exists)", function(a){
+  var L = OceanicCore.createLearner({ oceanic: historied().os });
+  var srcs = L.sources();
+  a.equal(srcs[0].source, "rumor", "the unreliable source surfaces first");
+});
+
+suite.test("unreliableSources() flags sources below a threshold with enough samples", function(a){
+  var L = OceanicCore.createLearner({ oceanic: historied().os });
+  var bad = L.unreliableSources(0.5, 2).map(function(s){ return s.source; });
+  a.deepEqual(bad, ["rumor"]);
+  a.deepEqual(L.unreliableSources(0.5, 3).map(function(s){ return s.source; }), [], "min-samples excludes rumor at 3");
+});
+
+suite.test("a reversed decision becomes a lesson", function(a){
+  var f = historied();
+  var L = OceanicCore.createLearner({ oceanic: f.os });
+  var rev = L.lessons().filter(function(l){ return l.kind === "reversal"; });
+  a.equal(rev.length, 1);
+  a.equal(rev[0].id, f.dec);
+  a.ok(rev[0].detail.indexOf("reversed") >= 0);
+});
+
+suite.test("rejected observations become lessons carrying their source", function(a){
+  var L = OceanicCore.createLearner({ oceanic: historied().os });
+  var rej = L.lessons().filter(function(l){ return l.kind === "rejection"; });
+  a.equal(rej.length, 2);
+  rej.forEach(function(l){ a.equal(l.source, "rumor", "the lesson remembers where the bad reality came from"); });
+});
+
+suite.test("revised knowledge becomes a lesson counting how often understanding changed", function(a){
+  var f = historied();
+  var L = OceanicCore.createLearner({ oceanic: f.os });
+  var rvz = L.lessons().filter(function(l){ return l.kind === "revision"; });
+  a.equal(rvz.length, 1);
+  a.equal(rvz[0].id, f.k);
+  a.ok(rvz[0].detail.indexOf("2 times") >= 0, "two revisions counted");
+});
+
+suite.test("knowledge that was never revised is not a lesson", function(a){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true });
+  os.start();
+  os.knowledge.learn({ statement: "a stable fact", topics: ["t"] });
+  var L = OceanicCore.createLearner({ oceanic: os });
+  a.equal(L.lessons().filter(function(l){ return l.kind === "revision"; }).length, 0);
+});
+
+suite.test("summary() tallies lessons by kind and averages reliability", function(a){
+  var L = OceanicCore.createLearner({ oceanic: historied().os });
+  var s = L.summary();
+  a.equal(s.lessons, 4);
+  a.deepEqual(s.byKind, { reversal: 1, rejection: 2, revision: 1 });
+  a.equal(s.unreliableSources, 1);
+  a.equal(s.avgReliability, 0.5, "buoy-7 (1.0) and rumor (0.0) average to 0.5; unattributed has no verdict");
+});
+
+suite.test("learning is pure — it writes nothing to the ocean", function(a){
+  var f = historied();
+  var before = f.os.status().memory.count;
+  var L = OceanicCore.createLearner({ oceanic: f.os });
+  L.sources(); L.lessons(); L.summary();
+  a.equal(f.os.status().memory.count, before);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Learning";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var L = OceanicCore.createLearner({ oceanic: historied().os });
+  var st = document.getElementById("sources");
+  L.sources().forEach(function(s){
+    var row = st.insertRow();
+    row.insertCell().textContent = s.source;
+    row.insertCell().textContent = String(s.observations);
+    row.insertCell().textContent = String(s.verified);
+    row.insertCell().textContent = String(s.rejected);
+    var c = row.insertCell();
+    if (s.reliability == null){ c.textContent = "—"; c.className = "na"; }
+    else { c.textContent = (s.reliability * 100).toFixed(0) + "%"; c.className = s.reliability >= 0.5 ? "good" : "bad"; }
+  });
+  var lt = document.getElementById("lessons");
+  L.lessons().forEach(function(l){
+    var row = lt.insertRow();
+    var c = row.insertCell(); c.textContent = l.kind.toUpperCase(); c.className = "k-" + l.kind;
+    row.insertCell().textContent = l.title;
+    row.insertCell().textContent = l.detail;
+  });
+})();
+</script>
+</body>
+</html>
