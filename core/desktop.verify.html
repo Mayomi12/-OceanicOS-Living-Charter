@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Desktop</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Desktop</b> (build 0025, Stage 3 · Applications). The workspace application — many windows over one Memory Ocean, composing Harbor (0019) and Mobile (0024). Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+<div class="note">The Desktop application itself is <a href="desktop.html" style="color:#38bdf8">desktop.html</a> — this page verifies its logic.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="cli.js"></script>
+<script src="logger.js"></script>
+<script src="harbor.js"></script>
+<script src="mobile.js"></script>
+<script src="desktop.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newDesktop(){ return OceanicCore.createDesktop({ oceanic: OceanicCore.createOceanic({ now: clock, manual: true, name: "desktop-test" }), now: clock }); }
+
+var suite = OceanicCore.createVerifier({ name: "Desktop (build 0025)" });
+
+suite.test("createDesktop requires an assembled system and its dependency factories", function(a){
+  a.equal(typeof OceanicCore.createDesktop, "function");
+  a.throws(function(){ OceanicCore.createDesktop(); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createDesktop({ oceanic: OceanicCore.createOceanic({ manual:true }), deps: {} }); }, "empty deps");
+  var d = newDesktop();
+  ["boot","menu","launch","focus","minimize","restore","close","windows","desktop","status",
+   "exec","capture","inbox","triage"].forEach(function(fn){
+    a.equal(typeof d[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("a fresh desktop is not booted; no windows, quiet water", function(a){
+  var s = newDesktop().desktop();
+  a.equal(s.booted, false);
+  a.equal(s.pulse, 0);
+  a.equal(s.ocean, 0);
+  a.deepEqual(s.windows, []);
+  a.deepEqual(s.activity, []);
+});
+
+suite.test("boot() boots the shared system ONCE, logs it, and is idempotent", function(a){
+  var d = newDesktop();
+  var s = d.boot();
+  a.equal(s.booted, true);
+  a.equal(s.pulse, 1, "one pulse for the whole workspace");
+  a.ok(s.activity[0].message.indexOf("desktop online") >= 0);
+  d.boot();
+  a.equal(d.desktop().pulse, 1, "second boot does nothing");
+});
+
+suite.test("menu() lists the five apps of the workspace", function(a){
+  var m = newDesktop().menu();
+  a.equal(m.length, 5);
+  a.deepEqual(m.map(function(x){ return x.id; }), ["console","capture","inbox","dashboard","activity"]);
+  m.forEach(function(x){ a.ok(x.title && x.icon, x.id + " has a title and icon"); });
+});
+
+suite.test("launch() opens a focused window; relaunching focuses the singleton instead of duplicating", function(a){
+  var d = newDesktop(); d.boot();
+  var r = d.launch("console");
+  a.equal(r.ok, true);
+  a.equal(r.window.app, "console");
+  a.equal(r.window.focused, true);
+  d.launch("dashboard");
+  var again = d.launch("console");
+  a.equal(again.ok, true);
+  a.equal(d.windows().length, 2, "no duplicate console window");
+  a.equal(again.window.focused, true, "relaunch focused the existing window");
+});
+
+suite.test("z-order is maintained: topmost last, focus() raises", function(a){
+  var d = newDesktop(); d.boot();
+  var w1 = d.launch("console").window.id;
+  var w2 = d.launch("capture").window.id;
+  var w3 = d.launch("inbox").window.id;
+  var ids = d.windows().map(function(w){ return w.id; });
+  a.deepEqual(ids, [w1, w2, w3], "launch order = z-order");
+  a.equal(d.windows()[2].focused, true, "topmost is focused");
+  d.focus(w1);
+  ids = d.windows().map(function(w){ return w.id; });
+  a.deepEqual(ids, [w2, w3, w1], "focus raised w1 to the top");
+  a.equal(d.windows()[2].id, w1);
+  a.equal(d.windows()[2].focused, true);
+});
+
+suite.test("minimize()/restore() toggle; a minimized window loses focus; close() removes", function(a){
+  var d = newDesktop(); d.boot();
+  var w1 = d.launch("console").window.id;
+  var w2 = d.launch("capture").window.id;
+  d.minimize(w2);
+  var ws = d.windows();
+  a.equal(ws[1].minimized, true);
+  a.equal(ws[1].focused, false, "a minimized window is not focused");
+  a.equal(ws[0].focused, true, "focus falls to the next visible window");
+  d.restore(w2);
+  a.equal(d.windows()[1].minimized, false);
+  a.equal(d.windows()[1].focused, true, "restore refocuses");
+  d.close(w2);
+  a.equal(d.windows().length, 1);
+  a.equal(d.windows()[0].id, w1);
+});
+
+suite.test("an unknown app or unknown window is reported (ok:false) — and never throws", function(a){
+  var d = newDesktop(); d.boot();
+  var r = d.launch("frobnicator");
+  a.equal(r.ok, false);
+  a.ok(r.error.indexOf("unknown app") >= 0);
+  ["focus","minimize","restore","close"].forEach(function(fn){
+    var x = d[fn]("w-999");
+    a.equal(x.ok, false, fn + " reports, never throws");
+  });
+});
+
+suite.test("ONE ocean: a drop captured in the mobile pane is visible in every other pane", function(a){
+  var d = newDesktop(); d.boot();
+  var r = d.capture("the tide is turning");
+  a.equal(r.ok, true);
+  a.equal(d.inbox().length, 1, "visible in the inbox pane");
+  a.equal(d.desktop().pending, 1, "visible on the taskbar badge");
+  a.equal(d.apps.harbor.dashboard().engines.reality.pending, 1, "visible in the harbor dashboard pane");
+  var st = d.exec("status");
+  a.equal(st.ok, true, "the console pane drives the same system");
+  a.equal(st.dashboard.ocean, d.desktop().ocean, "console and desktop agree on the one ocean");
+});
+
+suite.test("verification before acceptance still holds when driven from the Desktop", function(a){
+  var d = newDesktop(); d.boot();
+  var oid = d.capture("unconfirmed swell").id;
+  var did = d.apps.harbor.api.call("decision.propose", { question:"act?", options:["a","b"], grounds:[oid] }).data.id;
+  var refused = d.exec("decide " + did + " a");
+  a.equal(refused.ok, false); a.ok(refused.error.indexOf("not verified") >= 0);
+  a.equal(d.triage(oid, "verify").ok, true, "one tap in the inbox pane");
+  a.equal(d.exec("decide " + did + " a").ok, true, "permitted once reality is verified");
+});
+
+suite.test("desktop() and status() are consistent; activity is unified across the apps", function(a){
+  var d = newDesktop(); d.boot();
+  d.launch("console");
+  d.capture("one drop");
+  d.exec("learn tides follow the moon");
+  var s = d.desktop();
+  a.equal(s.windows.length, d.status().windows);
+  a.equal(s.pending, d.status().pending);
+  var msgs = s.activity.map(function(e){ return e.message; }).join(" | ");
+  a.ok(msgs.indexOf("drop captured") >= 0, "mobile's activity is in the one feed");
+  a.ok(msgs.indexOf("learn") >= 0, "harbor's activity is in the one feed");
+  a.ok(msgs.indexOf("window opened") >= 0, "the desktop's own activity is in the one feed");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Desktop";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>

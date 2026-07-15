@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ω∞ OceanicOS — Extensions</title>
+<style>
+  :root{ --bg:#04141f; --panel:#061a26; --line:#12455f; --ink:#e8f6fb; --dim:#8fb3c4;
+         --ok:#34d399; --info:#38bdf8; --warn:#fbbf24; --err:#fb7185; }
+  *{box-sizing:border-box}
+  body{font-family:Consolas,ui-monospace,monospace;background:var(--bg);color:var(--ink);margin:0;line-height:1.5}
+  header{padding:16px 22px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between}
+  header h1{font-size:17px;margin:0}
+  header .v{color:var(--dim);font-size:12px}
+  main{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:18px 22px;max-width:1050px;margin:auto}
+  @media(max-width:760px){ main{grid-template-columns:1fr} }
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .card h2{font-size:12px;margin:0 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+  .ext{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px}
+  .ext .top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .ext b{font-size:13px}
+  .ext .ver{color:var(--dim);font-size:11px}
+  .state{font-size:10px;border-radius:8px;padding:1px 8px;font-weight:bold;text-transform:uppercase}
+  .state.registered{background:#0c2c3d;color:var(--dim)}
+  .state.active{background:var(--ok);color:var(--bg)}
+  .state.inactive{background:#0c2c3d;color:var(--warn)}
+  .state.failed{background:var(--err);color:var(--bg)}
+  .ext .err{color:var(--err);font-size:11px;margin-top:4px}
+  .ext .cmds{color:var(--dim);font-size:11px;margin-top:4px}
+  .ext .btns{margin-top:8px;display:flex;gap:8px}
+  button{font-family:inherit;font-size:11px;background:var(--panel);color:var(--ink);border:1px solid var(--line);
+         border-radius:6px;padding:5px 12px;cursor:pointer;min-height:30px}
+  button:hover{border-color:var(--info)}
+  .pal{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #0c2c3d;font-size:12px}
+  .pal code{color:var(--info)}
+  .pal button{margin-left:auto}
+  #out{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px;height:170px;overflow:auto;
+       font-size:11px;white-space:pre-wrap;margin-top:12px}
+  #out .ok{color:var(--ok)} #out .err{color:var(--err)}
+  .empty{color:var(--dim);font-style:italic;font-size:12px}
+  footer{color:var(--dim);font-size:12px;padding:14px 22px;border-top:1px solid var(--line);text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>Ω♾️V :: ƆCEANiC_OS — Extensions</h1>
+  <div class="v">host v<span id="hostv">–</span> · <span id="counts">–</span> · ocean <span id="ocean">0</span></div>
+</header>
+<main>
+  <section class="card">
+    <h2>Installed extensions</h2>
+    <div id="exts"></div>
+  </section>
+  <section class="card">
+    <h2>Command palette</h2>
+    <div id="palette"></div>
+    <div id="out"></div>
+  </section>
+</main>
+<footer>Code the system did not ship with, bound by the same Charter. — zero-runtime, in your browser.</footer>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="logger.js"></script>
+<script src="versioning.js"></script>
+<script src="extensions.js"></script>
+<script>
+"use strict";
+var host = OceanicCore.createExtensions({ oceanic: OceanicCore.createOceanic({ manual: true, name: "extensions" }) });
+host.boot();
+
+// the shipped sample…
+host.register(OceanicCore.createExtensions.samples.tideWatch);
+// …and a second extension defined right here on the page — code the core never shipped.
+host.register({
+  id: "drop-counter", name: "Drop Counter", version: "1.0.0",
+  activate: function (ctx) {
+    ctx.log("counting drops");
+    return { commands: {
+      count: function () {
+        var r = ctx.api.call("snapshot", {});
+        return r.ok ? { records: r.data.records, bytes: r.data.bytes } : { error: r.error };
+      }
+    } };
+  }
+});
+
+var out = document.getElementById("out");
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function print(text, cls){ var d=document.createElement("div"); if(cls) d.className=cls; d.textContent=text; out.appendChild(d); out.scrollTop=out.scrollHeight; }
+
+function paint(){
+  document.getElementById("hostv").textContent = host.version;
+  var s = host.status();
+  document.getElementById("counts").textContent = s.registered + " installed · " + s.active + " active · " + s.commands + " commands";
+  document.getElementById("ocean").textContent = host.oceanic.status().memory.count;
+
+  var box = document.getElementById("exts"); box.innerHTML = "";
+  host.list().forEach(function(e){
+    var el = document.createElement("div"); el.className = "ext";
+    el.innerHTML = '<div class="top"><b>'+esc(e.name)+'</b><span class="ver">'+esc(e.id)+'@'+esc(e.version)+
+      '</span><span class="state '+e.state+'">'+e.state+"</span></div>"+
+      (e.error ? '<div class="err">'+esc(e.error)+"</div>" : "")+
+      (e.commands.length ? '<div class="cmds">commands: '+esc(e.commands.join(", "))+"</div>" : "");
+    var btns = document.createElement("div"); btns.className = "btns";
+    if (e.state === "active") {
+      var off = document.createElement("button"); off.textContent = "Deactivate";
+      off.addEventListener("click", function(){ host.deactivate(e.id); paint(); });
+      btns.appendChild(off);
+    } else {
+      var on = document.createElement("button"); on.textContent = e.state === "failed" ? "Retry" : "Activate";
+      on.addEventListener("click", function(){ var r = host.activate(e.id); if(!r.ok) print("! "+r.error, "err"); paint(); });
+      btns.appendChild(on);
+    }
+    el.appendChild(btns);
+    box.appendChild(el);
+  });
+
+  var pal = document.getElementById("palette"); pal.innerHTML = "";
+  var cs = host.commands();
+  if (!cs.length) pal.innerHTML = '<div class="empty">No commands — activate an extension.</div>';
+  cs.forEach(function(c){
+    var row = document.createElement("div"); row.className = "pal";
+    row.innerHTML = "<code>"+esc(c.extension)+"."+esc(c.command)+"</code>";
+    var go = document.createElement("button"); go.textContent = "Run";
+    go.addEventListener("click", function(){
+      var r = host.invoke(c.extension, c.command);
+      if (r.ok) print(c.extension+"."+c.command+" → "+JSON.stringify(r.data), "ok");
+      else print("! "+r.error, "err");
+      paint();
+    });
+    row.appendChild(go);
+    pal.appendChild(row);
+  });
+}
+paint();
+print("Extensions host ready — activate an extension, then run its commands.", "ok");
+</script>
+</body>
+</html>

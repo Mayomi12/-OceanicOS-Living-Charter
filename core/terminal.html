@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ω∞ OceanicOS — Terminal</title>
+<style>
+  :root{ --bg:#04141f; --line:#12455f; --ink:#e8f6fb; --dim:#8fb3c4;
+         --ok:#34d399; --info:#38bdf8; --warn:#fbbf24; --err:#fb7185; }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{font-family:Consolas,ui-monospace,monospace;background:var(--bg);color:var(--ink);margin:0;
+       display:flex;flex-direction:column;font-size:14px;line-height:1.55}
+  #screen{flex:1;overflow:auto;padding:16px 18px;white-space:pre-wrap;word-break:break-word}
+  #screen .sys{color:var(--info)}
+  #screen .cmd{color:var(--ink)}
+  #screen .out{color:var(--dim)}
+  #screen .err{color:var(--err)}
+  #row{display:flex;gap:8px;padding:10px 18px 14px;border-top:1px solid var(--line)}
+  #row .p{color:var(--ok)}
+  #line{flex:1;background:none;border:0;outline:none;color:var(--ink);font-family:inherit;font-size:14px;caret-color:var(--ok)}
+  #hint{padding:0 18px 10px;color:var(--dim);font-size:11px}
+</style>
+</head>
+<body>
+<div id="screen"></div>
+<div id="row"><span class="p">oceanic&gt;</span><input id="line" autocomplete="off" spellcheck="false" autofocus /></div>
+<div id="hint">Enter run · ↑↓ history · Tab complete · try: help</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="cli.js"></script>
+<script src="logger.js"></script>
+<script src="terminal.js"></script>
+<script>
+"use strict";
+var term = OceanicCore.createTerminal({ oceanic: OceanicCore.createOceanic({ manual: true, name: "terminal" }) });
+var screen = document.getElementById("screen");
+var line = document.getElementById("line");
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function paint(){
+  screen.innerHTML = term.scrollback().map(function(l){
+    return '<div class="'+l.kind+'">'+esc(l.text)+"</div>";
+  }).join("");
+  screen.scrollTop = screen.scrollHeight;
+}
+
+line.addEventListener("keydown", function(e){
+  if (e.key === "Enter") {
+    term.run(line.value);
+    line.value = "";
+    paint();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    line.value = term.recall("up");
+  } else if (e.key === "ArrowDown") {
+    e.preventDefault();
+    line.value = term.recall("down");
+  } else if (e.key === "Tab") {
+    e.preventDefault();
+    var c = term.complete(line.value);
+    if (c.matches.length > 1) {
+      term.scrollback();                          // no-op read; show candidates on screen
+      screen.innerHTML += '<div class="sys">'+esc(c.matches.join("  "))+"</div>";
+      screen.scrollTop = screen.scrollHeight;
+    }
+    if (c.matches.length) line.value = c.completion;
+  }
+});
+document.body.addEventListener("click", function(){ line.focus(); });
+
+term.boot();
+paint();
+</script>
+</body>
+</html>

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Terminal</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Terminal</b> (build 0026, Stage 3 · Applications). The keyboard-native application — the CLI (0012) at full screen, with verifiable history recall, tab completion, and scrollback. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+<div class="note">The Terminal application itself is <a href="terminal.html" style="color:#38bdf8">terminal.html</a> — this page verifies its logic.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="cli.js"></script>
+<script src="logger.js"></script>
+<script src="terminal.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newTerminal(){ return OceanicCore.createTerminal({ oceanic: OceanicCore.createOceanic({ now: clock, manual: true, name: "terminal-test" }), now: clock }); }
+
+var suite = OceanicCore.createVerifier({ name: "Terminal (build 0026)" });
+
+suite.test("createTerminal requires an assembled system and its dependency factories", function(a){
+  a.equal(typeof OceanicCore.createTerminal, "function");
+  a.throws(function(){ OceanicCore.createTerminal(); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createTerminal({ oceanic: OceanicCore.createOceanic({ manual:true }), deps: {} }); }, "empty deps");
+  var t = newTerminal();
+  ["boot","run","recall","complete","clear","scrollback","history","verbs","status","help"].forEach(function(fn){
+    a.equal(typeof t[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("a fresh terminal is not booted; empty scrollback and history", function(a){
+  var t = newTerminal();
+  a.equal(t.status().booted, false);
+  a.deepEqual(t.scrollback(), []);
+  a.deepEqual(t.history(), []);
+});
+
+suite.test("boot() boots the system, banners the scrollback, logs — and is idempotent", function(a){
+  var t = newTerminal();
+  var s = t.boot();
+  a.equal(s.booted, true);
+  a.equal(t.scrollback().length, 1, "one banner line");
+  a.equal(t.scrollback()[0].kind, "sys");
+  a.ok(t.scrollback()[0].text.indexOf("pulse 1") >= 0);
+  t.boot();
+  a.equal(t.scrollback().length, 1, "second boot adds nothing");
+  a.equal(t.oceanic.status().pulse, 1, "and beats no second pulse");
+});
+
+suite.test("run() executes through the CLI; scrollback gains cmd+out; history grows", function(a){
+  var t = newTerminal(); t.boot();
+  var r = t.run("observe the tide is rising");
+  a.equal(r.ok, true);
+  a.ok(r.output.indexOf("observed") >= 0);
+  var sb = t.scrollback();
+  a.equal(sb[sb.length - 2].kind, "cmd");
+  a.ok(sb[sb.length - 2].text.indexOf("oceanic> observe") >= 0);
+  a.equal(sb[sb.length - 1].kind, "out");
+  a.deepEqual(t.history(), ["observe the tide is rising"]);
+  a.equal(t.oceanic.status().memory.count, 1, "the drop is in the ocean");
+});
+
+suite.test("an unknown command is reported as an err line (ok:false) — and never throws", function(a){
+  var t = newTerminal(); t.boot();
+  var r = t.run("frobnicate the mainsail");
+  a.equal(r.ok, false);
+  a.ok(r.error.indexOf("unknown command") >= 0);
+  var last = t.scrollback()[t.scrollback().length - 1];
+  a.equal(last.kind, "err");
+  a.deepEqual(t.history(), ["frobnicate the mainsail"], "failed commands are still recallable");
+});
+
+suite.test("recall() walks history like readline: clamped at the oldest, empty past the newest", function(a){
+  var t = newTerminal(); t.boot();
+  a.equal(t.recall("up"), "", "empty history recalls nothing");
+  t.run("status");
+  t.run("help");
+  t.run("help");                                        // consecutive duplicate
+  a.deepEqual(t.history(), ["status", "help"], "consecutive duplicates stored once");
+  a.equal(t.recall("up"), "help");
+  a.equal(t.recall("up"), "status");
+  a.equal(t.recall("up"), "status", "clamped at the oldest");
+  a.equal(t.recall("down"), "help");
+  a.equal(t.recall("down"), "", "past the newest = fresh prompt");
+  a.equal(t.recall("up"), "help", "recall restarts from the newest");
+  t.run("builds");
+  a.equal(t.recall("up"), "builds", "a run resets the cursor");
+});
+
+suite.test("complete(): unique prefix completes to 'verb '; ambiguity extends to the shared prefix; no match is empty", function(a){
+  var t = newTerminal(); t.boot();
+  var one = t.complete("lear");
+  a.deepEqual(one.matches, ["learn"]);
+  a.equal(one.completion, "learn ", "unique match completes with a trailing space");
+  var many = t.complete("de");
+  a.deepEqual(many.matches, ["decide", "decisions"]);
+  a.equal(many.completion, "deci", "extends to the shared prefix");
+  var none = t.complete("xyz");
+  a.deepEqual(none.matches, []);
+  a.equal(none.completion, "xyz", "no match leaves the input alone");
+});
+
+suite.test("the completion verbs are exactly the CLI's real commands", function(a){
+  var t = newTerminal(); t.boot();
+  a.deepEqual(t.complete("").matches, t.cli.commands, "complete('') offers every verb");
+  a.deepEqual(t.verbs(), t.cli.commands);
+  a.ok(t.verbs().length >= 15);
+  a.equal(t.help().length, t.verbs().length, "help lines match the verbs");
+});
+
+suite.test("clear() clears the VIEW only — the ocean keeps every record", function(a){
+  var t = newTerminal(); t.boot();
+  t.run("observe first");
+  t.run("observe second");
+  var before = t.oceanic.status().memory.count;
+  a.ok(t.scrollback().length >= 5);
+  t.clear();
+  a.equal(t.scrollback().length, 1, "one sys line remains");
+  a.ok(t.scrollback()[0].text.indexOf("the ocean remembers") >= 0);
+  a.equal(t.oceanic.status().memory.count, before, "no record was erased");
+  a.deepEqual(t.history().length, 2, "history survives a clear");
+});
+
+suite.test("verification before acceptance still holds when driven from the Terminal", function(a){
+  var t = newTerminal(); t.boot();
+  var oid = t.run("observe unconfirmed swell").output.split(" ")[1];
+  var did = t.run("propose act? | a | b").output.split(" ")[1];
+  // ground the decision on the pending observation via the engine, then decide from the terminal
+  var t2 = newTerminal(); t2.boot();
+  var o2 = t2.run("observe unconfirmed swell").output.split(" ")[1];
+  var d2 = t2.oceanic.decisions.propose({ question: "act?", options: ["a","b"], grounds: [o2] }).meta.did;
+  var refused = t2.run("decide " + d2 + " a");
+  a.equal(refused.ok, false); a.ok(refused.error.indexOf("not verified") >= 0);
+  a.equal(t2.run("verify " + o2).ok, true);
+  a.equal(t2.run("decide " + d2 + " a").ok, true, "permitted once reality is verified");
+  a.ok(oid && did, "the first terminal drove its own ocean untouched");
+});
+
+suite.test("scrollback() and history() return copies; status() is consistent", function(a){
+  var t = newTerminal(); t.boot();
+  t.run("status");
+  var sb = t.scrollback(); sb.push({ forged: true });
+  var h = t.history(); h.push("forged");
+  a.equal(t.scrollback().length, 3, "banner + cmd + out — the forgery bounced");
+  a.equal(t.history().length, 1);
+  var s = t.status();
+  a.equal(s.commands, 1);
+  a.equal(s.history, 1);
+  a.equal(s.scrollback, 3);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Terminal";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>

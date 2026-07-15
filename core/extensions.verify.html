@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Extensions</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Extensions</b> (build 0027, Stage 3 · Applications — the stage's last capability). An extension host: code the system did not ship with, contained, contributory, reversible — and bound by the Charter through the API. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+<div class="note">The Extensions manager itself is <a href="extensions.html" style="color:#38bdf8">extensions.html</a> — this page verifies its logic.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="logger.js"></script>
+<script src="versioning.js"></script>
+<script src="extensions.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newHost(){ return OceanicCore.createExtensions({ oceanic: OceanicCore.createOceanic({ now: clock, manual: true, name: "ext-test" }), now: clock }); }
+function ext(id, cmds){ return { id: id, name: "Ext " + id, version: "1.0.0", activate: function(){ return { commands: cmds || {} }; } }; }
+
+var suite = OceanicCore.createVerifier({ name: "Extensions (build 0027)" });
+
+suite.test("createExtensions requires an assembled system and its dependencies", function(a){
+  a.equal(typeof OceanicCore.createExtensions, "function");
+  a.throws(function(){ OceanicCore.createExtensions(); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createExtensions({ oceanic: OceanicCore.createOceanic({ manual:true }), deps: {} }); }, "empty deps");
+  var h = newHost();
+  ["boot","register","activate","deactivate","invoke","commands","list","status"].forEach(function(fn){
+    a.equal(typeof h[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("a fresh host is quiet; boot() boots once and is idempotent", function(a){
+  var h = newHost();
+  a.equal(h.status().booted, false);
+  a.deepEqual(h.list(), []);
+  h.boot();
+  a.equal(h.status().booted, true);
+  h.boot();
+  a.equal(h.oceanic.status().pulse, 1, "one pulse only");
+});
+
+suite.test("register() validates the manifest — and refuses without throwing", function(a){
+  var h = newHost(); h.boot();
+  a.equal(h.register().ok, false, "empty manifest");
+  a.equal(h.register({ name:"x", version:"1.0.0", activate:function(){} }).ok, false, "missing id");
+  a.equal(h.register({ id:"x", version:"1.0.0", activate:function(){} }).ok, false, "missing name");
+  a.equal(h.register({ id:"x", name:"x", version:"1.0.0" }).ok, false, "missing activate");
+  var bad = h.register({ id:"x", name:"x", version:"one point oh", activate:function(){} });
+  a.equal(bad.ok, false); a.ok(bad.error.indexOf("SemVer") >= 0, "invalid version named in the error");
+  a.equal(h.register(ext("x")).ok, true, "a valid manifest registers");
+  var dup = h.register(ext("x"));
+  a.equal(dup.ok, false); a.ok(dup.error.indexOf("already registered") >= 0);
+  a.equal(h.list().length, 1);
+  a.equal(h.list()[0].state, "registered", "registered, not yet active");
+});
+
+suite.test("activate() runs the extension with a context and collects its commands", function(a){
+  var h = newHost(); h.boot();
+  var got = null;
+  h.register({ id:"probe", name:"Probe", version:"2.1.0", activate:function(ctx){ got = ctx; return { commands: { ping: function(){ return "pong"; } } }; } });
+  var r = h.activate("probe");
+  a.equal(r.ok, true);
+  a.equal(r.extension.state, "active");
+  a.deepEqual(r.extension.commands, ["ping"]);
+  a.ok(got && typeof got.api === "object" && typeof got.log === "function", "the context carries the API and a log");
+  a.equal(h.activate("probe").ok, true, "re-activating an active extension is a no-op");
+});
+
+suite.test("the context is the WHOLE surface — no engines, no memory, no kernel reach through it", function(a){
+  var h = newHost(); h.boot();
+  var got = null;
+  h.register({ id:"probe", name:"Probe", version:"1.0.0", activate:function(ctx){ got = ctx; return {}; } });
+  h.activate("probe");
+  a.deepEqual(Object.keys(got).sort(), ["api","log"], "context exposes exactly api + log");
+  a.equal(got.oceanic, undefined);
+  a.equal(got.memory, undefined);
+  a.equal(typeof got.api.call, "function", "the API is the one door");
+});
+
+suite.test("an extension that throws on activate is FAILED and contained — the host never throws", function(a){
+  var h = newHost(); h.boot();
+  h.register(ext("good", { hello: function(){ return "hi"; } }));
+  h.register({ id:"bomb", name:"Bomb", version:"1.0.0", activate:function(){ throw new Error("boom at activation"); } });
+  h.activate("good");
+  var r = h.activate("bomb");
+  a.equal(r.ok, false);
+  a.ok(r.error.indexOf("boom") >= 0);
+  var shaped = h.list().filter(function(e){ return e.id === "bomb"; })[0];
+  a.equal(shaped.state, "failed");
+  a.ok(shaped.error.indexOf("boom") >= 0, "the failure is recorded openly");
+  a.equal(h.invoke("good","hello").data, "hi", "other extensions are untouched");
+});
+
+suite.test("the palette aggregates ACTIVE extensions only; invoke() reports and never throws", function(a){
+  var h = newHost(); h.boot();
+  h.register(ext("a", { one: function(){ return 1; } }));
+  h.register(ext("b", { two: function(){ return 2; }, boom: function(){ throw new Error("command exploded"); } }));
+  h.activate("a"); h.activate("b");
+  a.deepEqual(h.commands().map(function(c){ return c.extension+"."+c.command; }), ["a.one","b.two","b.boom"]);
+  a.equal(h.invoke("a","one").data, 1);
+  var bad = h.invoke("b","boom");
+  a.equal(bad.ok, false); a.ok(bad.error.indexOf("exploded") >= 0, "a throwing command is caught");
+  a.equal(h.invoke("nope","x").ok, false, "unknown extension reported");
+  var miss = h.invoke("a","nope");
+  a.equal(miss.ok, false, "unknown command reported");
+  a.ok(miss.error.indexOf("no command") >= 0, "the missing command is named");
+});
+
+suite.test("deactivate() withdraws the contributions; reactivation restores them", function(a){
+  var h = newHost(); h.boot();
+  h.register(ext("a", { one: function(){ return 1; } }));
+  h.activate("a");
+  a.equal(h.commands().length, 1);
+  a.equal(h.deactivate("a").ok, true);
+  a.equal(h.commands().length, 0, "the palette forgot the commands");
+  a.equal(h.invoke("a","one").ok, false, "an inactive extension cannot be invoked");
+  a.equal(h.deactivate("a").ok, false, "deactivating twice is refused");
+  a.equal(h.deactivate("ghost").ok, false, "unknown id refused");
+  a.equal(h.activate("a").ok, true);
+  a.equal(h.invoke("a","one").data, 1, "reactivation restores the commands");
+});
+
+suite.test("the Charter binds an extension: it cannot commit on unverified reality", function(a){
+  var h = newHost(); h.boot();
+  var caught = null;
+  h.register({ id:"pushy", name:"Pushy", version:"1.0.0", activate:function(ctx){
+    return { commands: {
+      grab: function(){ return ctx.api.call("reality.observe", { observation: "unchecked rumor", source: "ext:pushy" }); },
+      commit: function(p){ return ctx.api.call("decision.decide", { id: p.did, choice: p.choice }); },
+      propose: function(p){ return ctx.api.call("decision.propose", p); },
+      bless: function(p){ return ctx.api.call("reality.verify", { id: p.id }); }
+    } };
+  } });
+  h.activate("pushy");
+  var oid = h.invoke("pushy","grab").data.data.id;
+  var did = h.invoke("pushy","propose", { question:"act?", options:["a","b"], grounds:[oid] }).data.data.id;
+  var refused = h.invoke("pushy","commit", { did: did, choice: "a" }).data;
+  a.equal(refused.ok, false, "the API refused the extension");
+  a.ok(refused.error.indexOf("not verified") >= 0);
+  h.invoke("pushy","bless", { id: oid });
+  a.equal(h.invoke("pushy","commit", { did: did, choice: "a" }).data.ok, true, "permitted once reality is verified");
+});
+
+suite.test("the shipped sample (tide-watch) registers, activates, and reports the real pending queue", function(a){
+  var h = newHost(); h.boot();
+  a.equal(h.register(OceanicCore.createExtensions.samples.tideWatch).ok, true);
+  a.equal(h.activate("tide-watch").ok, true);
+  a.equal(h.invoke("tide-watch","pending").data.pending, 0, "clear water at first");
+  var mark = h.invoke("tide-watch","mark", { text: "spring tide at dusk" });
+  a.equal(mark.ok, true);
+  var p = h.invoke("tide-watch","pending").data;
+  a.equal(p.pending, 1, "the sample sees its own drop");
+  a.equal(p.ids[0], mark.data.id);
+  a.equal(h.oceanic.status().memory.count >= 1, true, "and the drop is truly in the ocean");
+});
+
+suite.test("list() returns copies; status() is consistent", function(a){
+  var h = newHost(); h.boot();
+  h.register(ext("a", { one: function(){ return 1; } }));
+  h.activate("a");
+  var l = h.list(); l.push({ forged: true }); l[0].state = "hacked";
+  a.equal(h.list().length, 1, "the forgery bounced");
+  a.equal(h.list()[0].state, "active", "the mutation bounced");
+  var s = h.status();
+  a.equal(s.registered, 1);
+  a.equal(s.active, 1);
+  a.equal(s.commands, 1);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Extensions";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>

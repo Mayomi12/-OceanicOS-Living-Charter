@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ω∞ OceanicOS — Desktop</title>
+<style>
+  :root{ --bg:#04141f; --panel:#061a26; --line:#12455f; --ink:#e8f6fb; --dim:#8fb3c4;
+         --ok:#34d399; --info:#38bdf8; --warn:#fbbf24; --err:#fb7185; }
+  *{box-sizing:border-box}
+  body{font-family:Consolas,ui-monospace,monospace;background:var(--bg);color:var(--ink);margin:0;height:100vh;
+       display:flex;flex-direction:column;overflow:hidden;line-height:1.5}
+  #bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+  #bar .brand{font-weight:bold;font-size:13px;margin-right:6px}
+  #bar button{font-family:inherit;font-size:12px;background:var(--bg);color:var(--ink);border:1px solid var(--line);
+              border-radius:6px;padding:5px 10px;cursor:pointer}
+  #bar button:hover{border-color:var(--info)}
+  #bar .sys{margin-left:auto;color:var(--dim);font-size:11px}
+  #bar .badge{display:inline-block;min-width:16px;background:var(--warn);color:var(--bg);border-radius:8px;
+              font-size:10px;font-weight:bold;padding:0 4px;margin-left:3px}
+  #bar .badge.zero{visibility:hidden}
+  #area{position:relative;flex:1;overflow:hidden}
+  .win{position:absolute;width:380px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
+       box-shadow:0 8px 30px rgba(0,0,0,.5);display:flex;flex-direction:column;max-height:70%}
+  .win.focused{border-color:var(--info)}
+  .win.minimized{display:none}
+  .tbar{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);cursor:default;font-size:12px}
+  .tbar b{flex:1}
+  .tbar button{background:none;border:0;color:var(--dim);cursor:pointer;font-size:13px;padding:0 4px}
+  .tbar button:hover{color:var(--ink)}
+  .body{padding:10px;overflow:auto;font-size:12px}
+  .body textarea{width:100%;min-height:70px;background:var(--bg);border:1px solid var(--line);border-radius:6px;
+                 color:var(--ink);font-family:inherit;font-size:12px;padding:8px;resize:vertical}
+  .body .go{width:100%;margin-top:8px;background:var(--info);color:var(--bg);border:0;border-radius:6px;
+            padding:8px;font-family:inherit;font-weight:bold;cursor:pointer}
+  .echo{margin-top:6px;min-height:16px;font-size:11px}
+  .echo.ok{color:var(--ok)} .echo.err{color:var(--err)}
+  .out{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;height:150px;overflow:auto;white-space:pre-wrap}
+  .out .cmd{color:var(--ink)} .out .ok{color:var(--dim)} .out .err{color:var(--err)} .out .prompt{color:var(--ok)}
+  .inp{display:flex;margin-top:8px;gap:6px}
+  .inp span{color:var(--ok);padding-top:5px}
+  .inp input{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--ink);font-family:inherit;
+             font-size:12px;padding:5px 8px;border-radius:4px}
+  .card{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-bottom:8px}
+  .card .obs{margin-bottom:6px}
+  .card .meta{font-size:10px;color:var(--dim);margin-bottom:6px}
+  .acts{display:flex;gap:6px}
+  .acts button{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:6px;color:var(--ink);
+               font-family:inherit;font-size:11px;padding:5px 0;cursor:pointer}
+  .acts .yes{color:var(--ok)} .acts .no{color:var(--err)} .acts .box{color:var(--dim)}
+  .empty{color:var(--dim);font-style:italic}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+  .tile{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;text-align:center}
+  .tile .n{font-size:18px;font-weight:bold;color:var(--info)} .tile .l{font-size:10px;color:var(--dim)}
+  .engines{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .engine{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11px}
+  .engine b{color:var(--ink)} .engine span{color:var(--dim)}
+  ul.feed{margin:0;padding:0;list-style:none;font-size:11px}
+  ul.feed li{padding:3px 0;border-bottom:1px solid #0c2c3d}
+  .lv-info{color:var(--info)} .lv-warn{color:var(--warn)} .lv-error{color:var(--err)} .lv-debug{color:var(--dim)}
+</style>
+</head>
+<body>
+<div id="bar">
+  <span class="brand">Ω♾️V :: ƆCEANiC_OS</span>
+  <span id="menu"></span>
+  <span class="sys">pulse <span id="pulse">0</span> · ocean <span id="ocean">0</span> · pending <span id="pending">0</span></span>
+</div>
+<div id="area"></div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="api.js"></script>
+<script src="cli.js"></script>
+<script src="logger.js"></script>
+<script src="harbor.js"></script>
+<script src="mobile.js"></script>
+<script src="desktop.js"></script>
+<script>
+"use strict";
+var desk = OceanicCore.createDesktop({ oceanic: OceanicCore.createOceanic({ manual: true, name: "desktop" }) });
+var area = document.getElementById("area");
+var consoleLines = [];   // persists across window repaints
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function paintMenu(){
+  var m=document.getElementById("menu");
+  desk.menu().forEach(function(a){
+    var b=document.createElement("button");
+    b.textContent=a.icon+" "+a.title+(a.id==="inbox"?" ":"");
+    if(a.id==="inbox"){ var s=document.createElement("span"); s.className="badge zero"; s.id="badge"; s.textContent="0"; b.appendChild(s); }
+    b.addEventListener("click", function(){ desk.launch(a.id); paintAll(); });
+    m.appendChild(b);
+  });
+}
+
+function paintAll(){
+  var d=desk.desktop();
+  document.getElementById("pulse").textContent=d.pulse;
+  document.getElementById("ocean").textContent=d.ocean;
+  document.getElementById("pending").textContent=d.pending;
+  var badge=document.getElementById("badge");
+  if(badge){ badge.textContent=d.pending; badge.className="badge"+(d.pending?"":" zero"); }
+  area.innerHTML="";
+  d.windows.forEach(function(w,i){ area.appendChild(buildWindow(w,i,d)); });
+}
+
+function buildWindow(w,i,d){
+  var el=document.createElement("div");
+  el.className="win"+(w.focused?" focused":"")+(w.minimized?" minimized":"");
+  el.style.left=(24+i*36)+"px"; el.style.top=(18+i*30)+"px"; el.style.zIndex=String(10+i);
+  el.addEventListener("mousedown", function(){ if(!w.focused){ desk.focus(w.id); paintAll(); } });
+  var tb=document.createElement("div"); tb.className="tbar";
+  tb.innerHTML="<b>"+w.icon+" "+esc(w.title)+"</b>";
+  var mn=document.createElement("button"); mn.textContent="—";
+  mn.addEventListener("click", function(e){ e.stopPropagation(); desk.minimize(w.id); paintAll(); });
+  var cl=document.createElement("button"); cl.textContent="✕";
+  cl.addEventListener("click", function(e){ e.stopPropagation(); desk.close(w.id); paintAll(); });
+  tb.appendChild(mn); tb.appendChild(cl);
+  el.appendChild(tb);
+  var body=document.createElement("div"); body.className="body";
+  body.appendChild(pane(w.app,d));
+  el.appendChild(body);
+  return el;
+}
+
+function pane(app,d){
+  var box=document.createElement("div");
+  if(app==="console"){
+    var out=document.createElement("div"); out.className="out";
+    out.innerHTML=consoleLines.join("");
+    var row=document.createElement("div"); row.className="inp";
+    row.innerHTML='<span>oceanic&gt;</span>';
+    var input=document.createElement("input"); input.placeholder="help · observe … · verify <id> · status";
+    input.addEventListener("keydown", function(e){
+      if(e.key==="Enter" && input.value.trim()){
+        var t=input.value.trim();
+        consoleLines.push('<div><span class="prompt">oceanic&gt;</span> <span class="cmd">'+esc(t)+"</span></div>");
+        var r=desk.exec(t);
+        consoleLines.push(r.ok ? '<div class="ok">'+esc(r.message||"ok")+"</div>" : '<div class="err">! '+esc(r.error)+"</div>");
+        paintAll();
+        var again=area.querySelector(".win.focused .inp input"); if(again) again.focus();
+      }
+    });
+    row.appendChild(input);
+    box.appendChild(out); box.appendChild(row);
+    setTimeout(function(){ out.scrollTop=out.scrollHeight; },0);
+  } else if(app==="capture"){
+    var ta=document.createElement("textarea"); ta.placeholder="What do you observe? Capture is fast and unjudged.";
+    var go=document.createElement("button"); go.className="go"; go.textContent="💧 Capture";
+    var echo=document.createElement("div"); echo.className="echo";
+    go.addEventListener("click", function(){
+      var r=desk.capture(ta.value);
+      paintAll();
+      var e2=area.querySelector(".win.focused .echo");
+      if(e2){ e2.className="echo "+(r.ok?"ok":"err"); e2.textContent=r.ok?("captured "+r.id):("! "+r.error); }
+    });
+    box.appendChild(ta); box.appendChild(go); box.appendChild(echo);
+  } else if(app==="inbox"){
+    var items=desk.inbox();
+    if(!items.length){ box.innerHTML='<div class="empty">Nothing pending — the water is clear. 💧</div>'; }
+    items.forEach(function(o){
+      var card=document.createElement("div"); card.className="card";
+      card.innerHTML='<div class="obs">'+esc(o.observation)+'</div><div class="meta">'+esc(o.id)+" · "+esc(o.source||"—")+"</div>";
+      var acts=document.createElement("div"); acts.className="acts";
+      [["verify","✓ Verify","yes"],["reject","✗ Reject","no"],["archive","⬇ Archive","box"]].forEach(function(a){
+        var b=document.createElement("button"); b.textContent=a[1]; b.className=a[2];
+        b.addEventListener("click", function(){ desk.triage(o.id,a[0]); paintAll(); });
+        acts.appendChild(b);
+      });
+      card.appendChild(acts); box.appendChild(card);
+    });
+  } else if(app==="dashboard"){
+    var e=d.engines;
+    box.innerHTML='<div class="tiles">'+
+      tile(d.ocean,"ocean records")+tile(d.pending,"pending")+tile(e.reality.verified,"verified")+
+      '</div><div class="engines">'+
+      engine("Reality", e.reality.verified+"✓ · "+e.reality.pending+"? · "+e.reality.total+" total")+
+      engine("Decisions", e.decisions.decided+" decided · "+e.decisions.open+" open")+
+      engine("Knowledge", e.knowledge.established+" · "+e.knowledge.topics+" topics")+
+      engine("Projects", e.projects.active+" active · "+e.projects.total+" total")+"</div>";
+  } else if(app==="activity"){
+    var ul=document.createElement("ul"); ul.className="feed";
+    d.activity.slice().reverse().forEach(function(a){
+      var li=document.createElement("li"); li.className="lv-"+a.level; li.textContent=a.message; ul.appendChild(li);
+    });
+    if(!d.activity.length) ul.innerHTML='<li class="empty">quiet water</li>';
+    box.appendChild(ul);
+  }
+  return box;
+}
+function tile(n,l){ return '<div class="tile"><div class="n">'+n+'</div><div class="l">'+l+"</div></div>"; }
+function engine(name,body){ return '<div class="engine"><b>'+name+'</b><br><span>'+esc(body)+"</span></div>"; }
+
+paintMenu();
+desk.boot();
+desk.launch("console");
+desk.launch("dashboard");
+paintAll();
+</script>
+</body>
+</html>
