@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Search</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Search</b> (build 0028, Stage 4 · Intelligence — the stage's first capability). The Memory Ocean made findable: an inverted index, ranked queries, decidable freshness. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+<div class="note">The Search application itself is <a href="search.html" style="color:#38bdf8">search.html</a> — this page verifies its logic.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="search.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newWorld(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "search-test" });
+  return { os: os, search: OceanicCore.createSearch({ oceanic: os, now: clock }) };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Search (build 0028)" });
+
+suite.test("createSearch requires an assembled system and its dependencies", function(a){
+  a.equal(typeof OceanicCore.createSearch, "function");
+  a.throws(function(){ OceanicCore.createSearch(); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createSearch({ oceanic: OceanicCore.createOceanic({ manual:true }), deps: {} }); }, "empty deps");
+  var w = newWorld();
+  ["boot","index","query","suggest","status"].forEach(function(fn){
+    a.equal(typeof w.search[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("a fresh search is quiet; boot() boots once and is idempotent", function(a){
+  var w = newWorld();
+  a.equal(w.search.status().booted, false);
+  a.equal(w.search.status().indexed, 0);
+  w.search.boot();
+  w.search.boot();
+  a.equal(w.os.status().pulse, 1, "one pulse only");
+});
+
+suite.test("index() covers every engine: observations, decisions, knowledge, projects", function(a){
+  var w = newWorld(); w.search.boot();
+  w.os.reality.observe({ observation: "the tide is rising", source: "t" });
+  w.os.decisions.propose({ question: "reroute the ferry?", options: ["yes","no"], source: "t" });
+  w.os.knowledge.learn({ statement: "tides follow the moon", topics: ["tides"], source: "t" });
+  w.os.projects.open({ name: "winter routing", source: "t" });
+  var r = w.search.index();
+  a.equal(r.indexed, 4, "four records indexed");
+  a.equal(w.search.query("tide").results[0].type, "observation");
+  a.equal(w.search.query("ferry").results[0].type, "decision");
+  a.equal(w.search.query("moon").results[0].type, "knowledge");
+  a.equal(w.search.query("routing").results[0].type, "project");
+});
+
+suite.test("queries are case-insensitive and results carry real provenance", function(a){
+  var w = newWorld(); w.search.boot();
+  var oid = w.os.reality.observe({ observation: "The North Channel is SHOALING", source: "t" }).meta.oid;
+  var r = w.search.query("shoaling");
+  a.equal(r.ok, true);
+  a.equal(r.results.length, 1);
+  a.equal(r.results[0].id, oid, "the result is the real record");
+  a.equal(r.results[0].status, "pending", "with its real status");
+  a.equal(r.results[0].text, "The North Channel is SHOALING", "and its own text — search never fabricates");
+});
+
+suite.test("ranking is honest: more distinct terms beat frequency; matched terms are reported", function(a){
+  var w = newWorld(); w.search.boot();
+  var both = w.os.reality.observe({ observation: "the tide floods the channel", source: "t" }).meta.oid;
+  var tideTide = w.os.reality.observe({ observation: "tide tide tide everywhere", source: "t" }).meta.oid;
+  var r = w.search.query("tide channel");
+  a.equal(r.results[0].id, both, "two distinct terms beat one term repeated");
+  a.equal(r.results[1].id, tideTide);
+  a.deepEqual(r.results[0].matched, ["channel","tide"]);
+  a.deepEqual(r.results[1].matched, ["tide"]);
+  a.ok(r.results[0].score > r.results[1].score, "and the scores say so");
+});
+
+suite.test("equal relevance is broken by recency — newer records first", function(a){
+  var w = newWorld(); w.search.boot();
+  w.os.reality.observe({ observation: "gull sighted at dawn", source: "t" });
+  var newer = w.os.reality.observe({ observation: "gull sighted at dusk", source: "t" }).meta.oid;
+  var r = w.search.query("gull sighted");
+  a.equal(r.results.length, 2);
+  a.equal(r.results[0].id, newer, "the newer record ranks first on a tie");
+});
+
+suite.test("freshness is decidable: new drops and open amendments re-index automatically", function(a){
+  var w = newWorld(); w.search.boot();
+  w.search.index();
+  a.equal(w.search.query("kraken").results.length, 0);
+  var oid = w.os.reality.observe({ observation: "a kraken in the bay", source: "t" }).meta.oid;
+  a.equal(w.search.query("kraken").results.length, 1, "found with no manual re-index");
+  a.equal(w.search.query("kraken").results[0].status, "pending");
+  w.os.reality.verify(oid, "seen it myself");
+  a.equal(w.search.query("kraken").results[0].status, "verified", "an open amendment refreshes the index too");
+});
+
+suite.test("filters narrow by type and status", function(a){
+  var w = newWorld(); w.search.boot();
+  var oid = w.os.reality.observe({ observation: "tide tables published", source: "t" }).meta.oid;
+  w.os.reality.verify(oid);
+  w.os.reality.observe({ observation: "tide gauge broken", source: "t" });
+  w.os.knowledge.learn({ statement: "tide tables repeat", topics: ["tide"], source: "t" });
+  a.equal(w.search.query("tide").total, 3);
+  a.equal(w.search.query("tide", { type: "knowledge" }).total, 1);
+  a.equal(w.search.query("tide", { type: "observation", status: "verified" }).total, 1);
+  a.equal(w.search.query("tide", { type: "observation", status: "verified" }).results[0].id, oid);
+  a.equal(w.search.query("tide", { limit: 1 }).results.length, 1, "limit caps the page, not the total");
+  a.equal(w.search.query("tide", { limit: 1 }).total, 3);
+});
+
+suite.test("a blank query is refused (ok:false) — and never throws", function(a){
+  var w = newWorld(); w.search.boot();
+  a.equal(w.search.query("").ok, false);
+  a.equal(w.search.query("   ").ok, false);
+  a.equal(w.search.query(null).ok, false);
+  a.deepEqual(w.search.query("").results, []);
+});
+
+suite.test("searching writes NOTHING — the ocean is untouched by any query", function(a){
+  var w = newWorld(); w.search.boot();
+  w.os.reality.observe({ observation: "the water keeps its count", source: "t" });
+  var before = w.os.status().memory.count;
+  var snapBefore = w.os.exportSnapshot();
+  w.search.index();
+  w.search.query("water keeps count");
+  w.search.suggest("wat");
+  a.equal(w.os.status().memory.count, before, "record count unchanged");
+  a.equal(w.os.exportSnapshot(), snapBefore, "the ocean is byte-identical");
+});
+
+suite.test("suggest() completes from real indexed terms; status() is consistent", function(a){
+  var w = newWorld(); w.search.boot();
+  w.os.reality.observe({ observation: "tide tables and tidal charts", source: "t" });
+  a.deepEqual(w.search.suggest("tid"), ["tidal","tide"]);
+  a.deepEqual(w.search.suggest("xyz"), []);
+  a.deepEqual(w.search.suggest(""), []);
+  var s = w.search.status();
+  a.equal(s.indexed, 1);
+  a.ok(s.terms >= 4);
+  a.equal(s.oceanAt, w.os.status().memory.count, "the index states which ocean it saw");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Search";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>
