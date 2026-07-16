@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Knowledge Graph</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Knowledge Graph</b> (build 0029, Stage 4 · Intelligence). The ocean's relationships made walkable — derived, never stored; every edge a declared relationship. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+<div class="note">The Graph application itself is <a href="graph.html" style="color:#38bdf8">graph.html</a> — this page verifies its logic.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="graph.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newWorld(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "graph-test" });
+  return { os: os, g: OceanicCore.createGraph({ oceanic: os, now: clock }) };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Knowledge Graph (build 0029)" });
+
+suite.test("createGraph requires an assembled system and its dependencies", function(a){
+  a.equal(typeof OceanicCore.createGraph, "function");
+  a.throws(function(){ OceanicCore.createGraph(); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createGraph({ oceanic: OceanicCore.createOceanic({ manual:true }), deps: {} }); }, "empty deps");
+  var w = newWorld();
+  ["boot","build","nodes","edges","node","neighbors","path","orphans","stats","status"].forEach(function(fn){
+    a.equal(typeof w.g[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("a fresh graph is quiet; boot() boots once and is idempotent", function(a){
+  var w = newWorld();
+  a.equal(w.g.status().booted, false);
+  a.equal(w.g.status().nodes, 0);
+  w.g.boot(); w.g.boot();
+  a.equal(w.os.status().pulse, 1, "one pulse only");
+});
+
+suite.test("build(): every engine's records become nodes with their real identity; topics become nodes", function(a){
+  var w = newWorld(); w.g.boot();
+  var oid = w.os.reality.observe({ observation: "the tide is rising", source: "t" }).meta.oid;
+  var did = w.os.decisions.propose({ question: "reroute?", options: ["yes","no"], source: "t" }).meta.did;
+  var kid = w.os.knowledge.learn({ statement: "tides follow the moon", topics: ["tides"], source: "t" }).meta.kid;
+  var pid = w.os.projects.open({ name: "winter routing", source: "t" }).meta.pid;
+  var r = w.g.build();
+  a.equal(r.nodes, 5, "four records + one topic");
+  a.equal(w.g.node(oid).type, "observation");
+  a.equal(w.g.node(oid).status, "pending", "real status");
+  a.equal(w.g.node(did).type, "decision");
+  a.equal(w.g.node(kid).label, "tides follow the moon", "the node carries the record's own text");
+  a.equal(w.g.node(pid).type, "project");
+  a.equal(w.g.node("topic:tides").type, "topic");
+  a.equal(w.g.node("ghost"), null);
+});
+
+suite.test("a decision's grounds become grounded-on edges to the real observations", function(a){
+  var w = newWorld(); w.g.boot();
+  var oid = w.os.reality.observe({ observation: "shoaling reported", source: "t" }).meta.oid;
+  var did = w.os.decisions.propose({ question: "dredge?", options: ["yes","no"], grounds: [oid], source: "t" }).meta.did;
+  var e = w.g.edges("grounded-on");
+  a.equal(e.length, 1);
+  a.equal(e[0].from, did);
+  a.equal(e[0].to, oid);
+});
+
+suite.test("knowledge grounds AND topics become edges; knowledge on one topic share the topic node", function(a){
+  var w = newWorld(); w.g.boot();
+  var oid = w.os.reality.observe({ observation: "moonrise logged nightly", source: "t" }).meta.oid;
+  w.os.reality.verify(oid, "the log is kept");
+  var k1 = w.os.knowledge.learn({ statement: "tides follow the moon", topics: ["tides","moon"], grounds: [oid], source: "t" }).meta.kid;
+  var k2 = w.os.knowledge.learn({ statement: "spring tides are strongest", topics: ["tides"], source: "t" }).meta.kid;
+  a.equal(w.g.edges("grounded-on").length, 1);
+  a.equal(w.g.edges("about").length, 3, "k1→tides, k1→moon, k2→tides");
+  a.equal(w.g.nodes("topic").length, 2, "one shared tides node, one moon node");
+  var tideNbs = w.g.neighbors("topic:tides");
+  a.deepEqual(tideNbs.map(function(n){ return n.id; }).sort(), [k1, k2].sort(), "both knowledge hang on the shared topic");
+});
+
+suite.test("a project's typed links become edges with the declared kind preserved", function(a){
+  var w = newWorld(); w.g.boot();
+  var oid = w.os.reality.observe({ observation: "ice in the channel", source: "t" }).meta.oid;
+  var pid = w.os.projects.open({ name: "winter ops", source: "t" }).meta.pid;
+  w.os.projects.link(pid, { kind: "observation", id: oid });
+  var e = w.g.edges("links");
+  a.equal(e.length, 1);
+  a.equal(e[0].kind, "links:observation", "the declared kind rides on the edge");
+  a.equal(e[0].from, pid);
+  a.equal(e[0].to, oid);
+});
+
+suite.test("NO invented edges: unrelated records share nothing; a ground naming no record makes no edge", function(a){
+  var w = newWorld(); w.g.boot();
+  w.os.reality.observe({ observation: "one thing", source: "t" });
+  w.os.reality.observe({ observation: "another thing entirely", source: "t" });
+  w.os.knowledge.learn({ statement: "book wisdom", topics: [], grounds: ["the almanac, 4th edition"], source: "t" });
+  var s = w.g.stats();
+  a.equal(s.nodes, 3);
+  a.equal(s.edges, 0, "no declared record-to-record relationship, no edge — external provenance is not a node");
+  a.equal(w.g.orphans().length, 3, "all three are open water");
+});
+
+suite.test("neighbors(): connected nodes with kind + direction; kind filter; unknown id is empty", function(a){
+  var w = newWorld(); w.g.boot();
+  var oid = w.os.reality.observe({ observation: "reef charted", source: "t" }).meta.oid;
+  w.os.reality.verify(oid, "chart on file");
+  var kid = w.os.knowledge.learn({ statement: "reefs shift", topics: ["reefs"], grounds: [oid], source: "t" }).meta.kid;
+  var nbs = w.g.neighbors(kid);
+  a.equal(nbs.length, 2);
+  var byId = {}; nbs.forEach(function(n){ byId[n.id] = n; });
+  a.equal(byId[oid].kind, "grounded-on");
+  a.equal(byId[oid].direction, "out");
+  a.equal(byId["topic:reefs"].kind, "about");
+  a.equal(w.g.neighbors(kid, { kind: "about" }).length, 1, "kind filter");
+  a.equal(w.g.neighbors(oid)[0].direction, "in", "seen from the observation, the edge points in");
+  a.deepEqual(w.g.neighbors("ghost"), []);
+});
+
+suite.test("path(): BFS shortest chain across the declared relationships; unreachable is found:false", function(a){
+  var w = newWorld(); w.g.boot();
+  var oid = w.os.reality.observe({ observation: "the strait narrows", source: "t" }).meta.oid;
+  w.os.reality.verify(oid, "soundings agree");
+  var kid = w.os.knowledge.learn({ statement: "narrow straits run fast", topics: ["straits"], grounds: [oid], source: "t" }).meta.kid;
+  var did = w.os.decisions.propose({ question: "slow down?", options: ["yes","no"], grounds: [oid], source: "t" }).meta.did;
+  var island = w.os.projects.open({ name: "unrelated island", source: "t" }).meta.pid;
+  var p = w.g.path(did, "topic:straits");
+  a.equal(p.found, true);
+  a.equal(p.hops, 3, "decision → observation → knowledge → topic");
+  a.deepEqual(p.steps.map(function(s){ return s.node.id; }), [did, oid, kid, "topic:straits"]);
+  a.equal(p.steps[1].via, "grounded-on");
+  a.equal(p.steps[3].via, "about");
+  a.equal(w.g.path(did, island).found, false, "no invented route to the island");
+  a.equal(w.g.path("ghost", oid).found, false, "unknown ids never throw");
+  a.equal(w.g.path(oid, oid).found, true);
+  a.equal(w.g.path(oid, oid).hops, 0);
+});
+
+suite.test("freshness is decidable: new records and open amendments appear with no manual rebuild", function(a){
+  var w = newWorld(); w.g.boot();
+  w.g.build();
+  a.equal(w.g.nodes().length, 0);
+  var oid = w.os.reality.observe({ observation: "a kraken in the bay", source: "t" }).meta.oid;
+  a.equal(w.g.nodes().length, 1, "the new record is a node with no manual rebuild");
+  a.equal(w.g.node(oid).status, "pending");
+  w.os.reality.verify(oid, "seen it");
+  a.equal(w.g.node(oid).status, "verified", "an open amendment refreshes the node's status");
+});
+
+suite.test("the graph writes NOTHING; stats()/status() are consistent; returned arrays are copies", function(a){
+  var w = newWorld(); w.g.boot();
+  var oid = w.os.reality.observe({ observation: "counted water", source: "t" }).meta.oid;
+  w.os.reality.verify(oid, "count checked");
+  w.os.knowledge.learn({ statement: "water counts", topics: ["water"], grounds: [oid], source: "t" });
+  var before = w.os.status().memory.count;
+  var snapBefore = w.os.exportSnapshot();
+  w.g.build(); w.g.nodes(); w.g.edges(); w.g.neighbors(oid); w.g.path(oid, "topic:water"); w.g.orphans(); w.g.stats();
+  a.equal(w.os.status().memory.count, before, "record count unchanged");
+  a.equal(w.os.exportSnapshot(), snapBefore, "the ocean is byte-identical");
+  var s = w.g.stats();
+  a.equal(s.nodes, 3); a.equal(s.edges, 2);
+  a.equal(s.byType.observation, 1);
+  a.equal(s.byKind["grounded-on"], 1);
+  a.equal(s.byKind["about"], 1);
+  var ns = w.g.nodes(); ns.push({ forged: true });
+  a.equal(w.g.nodes().length, 3, "the forgery bounced");
+  a.equal(w.g.status().oceanAt, w.os.status().memory.count, "the graph states which ocean it saw");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Graph";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>
