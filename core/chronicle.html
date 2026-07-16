@@ -27,7 +27,7 @@
 </head>
 <body>
 <h1>Ω∞ Chronicle</h1>
-<p class="sub">A history explorer over the append-only Memory Ocean. Nothing here is ever erased: a correction appends a new record that supersedes the old, and both stay. Pick a record to see its lineage (<b>Provenance</b>, 0075); drag through time to watch the ocean's past states reappear (<b>Retrospect</b>, 0076). The lenses are the verified capabilities — this page is only glass.</p>
+<p class="sub">A history explorer over the append-only Memory Ocean. Nothing here is ever erased: a correction appends a new record that supersedes the old, and both stay. Pick a record to see its lineage (<b>Provenance</b>, 0075); drag through time to watch the ocean's past states reappear (<b>Retrospect</b>, 0076); undo or restore a past state the honest way (<b>Restore</b>, 0080 — it appends a correction, never deletes the mistake). The lenses are the verified capabilities — this page is only glass.</p>
 
 <h2>1 · The ocean <span class="sub" id="tally"></span></h2>
 <table id="records"><thead><tr><th>at</th><th>id</th><th>type</th><th>content</th><th>status</th></tr></thead><tbody></tbody></table>
@@ -44,6 +44,8 @@
 <h2>3 · Provenance of the selected record</h2>
 <div id="chain" aria-live="polite"></div>
 <pre id="prov"></pre>
+<button id="undoBtn">Undo last change (appends a correction)</button>
+<div id="undoline" class="sub" aria-live="polite"></div>
 
 <h2>4 · Retrospect — drag through time</h2>
 <label for="slider" id="tlabel">As of t = —</label>
@@ -52,12 +54,15 @@
 <pre id="asof"></pre>
 <div class="kv" id="stateline"></div>
 <div class="kv" id="changeline"></div>
+<button id="restoreBtn">Restore the selected lineage to this moment (appends a correction)</button>
+<div id="restoreline" class="sub" aria-live="polite"></div>
 
 <div class="note">Like every surface here, Chronicle holds itself to the house law: the reasoning is done by the verified lenses (core/provenance.js, core/retrospect.js, both in Continuous Verification) — the page only draws what they report. It writes to the ocean only when YOU append; the lenses never write at all.</div>
 
 <script src="memory.js"></script>
 <script src="provenance.js"></script>
 <script src="retrospect.js"></script>
+<script src="restore.js"></script>
 <script>
 "use strict";
 function el(id){ return document.getElementById(id); }
@@ -68,6 +73,7 @@ var clock = 0, seq = 0;
 var mem = OceanicCore.createMemory({ now: function(){ return clock; }, idgen: function(){ seq += 1; return "rec-" + seq; } });
 var prov = OceanicCore.createProvenance({ memory: mem });
 var retro = OceanicCore.createRetrospect({ memory: mem });
+var rest = OceanicCore.createRestore({ memory: mem, provenance: prov, retrospect: retro });
 
 function tick(){ clock += 100; return clock; }
 function seed(){
@@ -153,9 +159,42 @@ el("amendBtn").addEventListener("click", function(){
   el("amendText").value = "";
   renderAll();
 });
-el("slider").addEventListener("input", renderRetrospect);
+el("slider").addEventListener("input", function(){ renderRetrospect(); renderRestorePreview(); });
+
+/* ---- Restore (0080): undo and revert, the append-only way ---- */
+function renderRestorePreview(){
+  var t = +el("slider").value;
+  var p = rest.preview(selectedId, t);
+  if (!p.ok) { el("restoreline").textContent = p.reason; return; }
+  el("restoreline").textContent = p.noop
+    ? "as of t=" + t + " the lineage already reads the current version — restoring would change nothing"
+    : "would append a correction restoring “" + p.wouldRestore + "” (" + p.wouldRestoreId + ") over the current “" + p.current + "”";
+}
+el("undoBtn").addEventListener("click", function(){
+  tick();
+  var out = rest.undo(selectedId);
+  el("undoline").textContent = out.ok
+    ? "appended " + out.record.id + " restoring " + out.restoredFrom + " — the superseded version (" + out.supersededTip + ") still stands"
+    : out.reason;
+  if (out.ok) selectedId = out.record.id;
+  renderAll();                                   // updates the slider's max to the new span first
+  if (out.ok) { el("slider").value = clock; renderRetrospect(); }
+  renderRestorePreview();
+});
+el("restoreBtn").addEventListener("click", function(){
+  var t = +el("slider").value;
+  tick();
+  var out = rest.revertTo(selectedId, t);
+  el("restoreline").textContent = out.ok
+    ? "appended " + out.record.id + " restoring the as-of-t=" + t + " reading (" + out.restoredFrom + ") — nothing erased"
+    : out.reason;
+  if (out.ok) selectedId = out.record.id;
+  renderAll();                                   // updates the slider's max to the new span first
+  if (out.ok) { el("slider").value = clock; renderRetrospect(); }
+});
 
 renderAll();
+renderRestorePreview();
 </script>
 </body>
 </html>
