@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Digest</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  pre{background:#062033;border:1px solid #12455f;padding:12px;font-size:12px;white-space:pre-wrap;margin-top:12px}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Digest</b> (build 0082, Stage 8 · Stewardship). A read-out of the ocean's knowledge — types, confidence spread, correction rate, the most-revised lineages. Composes Provenance (0075) and Memory (0005); writes nothing. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — an ocean, summarised</h2>
+<pre id="live"></pre>
+<div class="note">Counts, not judgements: a tidy distribution is not a claim of truth or usefulness. Digest describes the knowledge; it does not evaluate it (that is Evaluation 0033 and the Reasoner 0028).</div>
+
+<script src="verify-engine.js"></script>
+<script src="memory.js"></script>
+<script src="provenance.js"></script>
+<script src="digest.js"></script>
+<script>
+"use strict";
+function rig(){
+  var clock = 0, n = 0;
+  var m = OceanicCore.createMemory({ now: function(){ return clock; }, idgen: function(){ n += 1; return "r" + n; } });
+  var prov = OceanicCore.createProvenance({ memory: m });
+  var dig = OceanicCore.createDigest({ memory: m, provenance: prov });
+  return { m: m, prov: prov, dig: dig,
+    remember: function(t, body, type, conf){ clock = t; return m.remember({ body: body, type: type, confidence: conf }); },
+    amend: function(t, id, body, conf){ clock = t; return m.amend(id, { body: body, type: m.get(id).type, confidence: conf }); } };
+}
+// build the same scenario used by several tests
+function scenario(){
+  var g = rig();
+  var A = g.remember(10, "obs one",   "observation", "high");        // r1
+  g.remember(20, "know one",  "knowledge",   "medium");              // r2
+  var A2 = g.amend(30, A.id, "obs one v2", "high");                  // r3  supersedes r1
+  g.remember(40, "obs two",   "observation", "low");                 // r4
+  g.amend(50, A2.id, "obs one v3", "high");                          // r5  supersedes r3
+  g.remember(60, "know two",  "knowledge",   "speculation");         // r6
+  return g;
+}
+
+var suite = OceanicCore.createVerifier({ name: "Digest (build 0082)" });
+
+suite.test("factory needs a Memory and a Provenance lens", function(a){
+  a.equal(typeof OceanicCore.createDigest, "function");
+  a.throws(function(){ OceanicCore.createDigest(); }, "no memory refused");
+  a.throws(function(){ OceanicCore.createDigest({ memory: rig().m }); }, "no provenance refused");
+  var d = rig().dig;
+  a.equal(typeof d.summary, "function"); a.equal(typeof d.mostCorrected, "function");
+});
+
+suite.test("summary tallies records, lineages, corrections and the span", function(a){
+  var s = scenario().dig.summary();
+  a.equal(s.records, 6, "every record, superseded included");
+  a.equal(s.current, 4, "four stand current");
+  a.equal(s.superseded, 2);
+  a.equal(s.lineages, 4, "four distinct stories");
+  a.equal(s.corrected, 1, "one lineage has been corrected");
+  a.equal(s.correctionRate, 0.25, "1 of 4 lineages corrected");
+  a.equal(s.longest, 3, "the deepest lineage is three versions");
+  a.deepEqual(s.span, { first: 10, last: 60 });
+});
+
+suite.test("distributions count only CURRENT records — superseded versions do not inflate the picture", function(a){
+  var s = scenario().dig.summary();
+  // current are: know one (knowledge/medium), obs two (observation/low), obs one v3 (observation/high), know two (knowledge/speculation)
+  a.deepEqual(s.byType, { observation: 2, knowledge: 2 }, "the two superseded observations are NOT counted");
+  a.deepEqual(s.byConfidence, { medium: 1, low: 1, high: 1, speculation: 1 });
+});
+
+suite.test("mostCorrected ranks the deepest lineages first and shows the current reading", function(a){
+  var g = scenario();
+  var top = g.dig.mostCorrected(5);
+  a.equal(top.length, 4, "one row per lineage");
+  a.equal(top[0].depth, 3, "the most-revised lineage leads");
+  a.equal(top[0].current, "obs one v3", "and shows its current reading");
+  a.ok(top[1].depth <= top[0].depth && top[3].depth === 1, "sorted by depth, descending");
+  a.equal(g.dig.mostCorrected(1).length, 1, "n bounds the result");
+  a.equal(g.dig.mostCorrected(1)[0].depth, 3, "and keeps the deepest");
+});
+
+suite.test("an empty ocean summarises to honest zeros", function(a){
+  var d = rig().dig;
+  var s = d.summary();
+  a.equal(s.records, 0); a.equal(s.current, 0); a.equal(s.lineages, 0);
+  a.equal(s.correctionRate, 0, "no divide-by-zero");
+  a.deepEqual(s.byType, {}); a.deepEqual(s.byConfidence, {});
+  a.deepEqual(s.span, { first: null, last: null });
+  a.deepEqual(d.mostCorrected(), [], "nothing to rank");
+});
+
+suite.test("Digest is a PURE READER — reading never changes the ocean", function(a){
+  var g = scenario();
+  var before = g.m.timeline().length;
+  g.dig.summary(); g.dig.mostCorrected(); g.dig.summary();
+  a.equal(g.m.timeline().length, before, "the record count did not move");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Digest";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var s = scenario().dig.summary();
+  var top = scenario().dig.mostCorrected(3);
+  document.getElementById("live").textContent =
+    "records: " + s.records + " (" + s.current + " current, " + s.superseded + " superseded)\n" +
+    "lineages: " + s.lineages + " · corrected: " + s.corrected + " (rate " + s.correctionRate + ") · deepest: " + s.longest + "\n" +
+    "by type: " + JSON.stringify(s.byType) + "\n" +
+    "by confidence: " + JSON.stringify(s.byConfidence) + "\n" +
+    "span: t=" + s.span.first + " … t=" + s.span.last + "\n" +
+    "most revised: " + top.map(function(r){ return r.originId + " (×" + r.depth + " → \"" + r.current + "\")"; }).join(", ");
+})();
+</script>
+</body>
+</html>
