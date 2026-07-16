@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Integrity</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  pre{background:#062033;border:1px solid #12455f;padding:12px;font-size:12px;white-space:pre-wrap;margin-top:12px}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Integrity</b> (build 0081, Stage 8 · Stewardship). A structural self-audit of the Memory Ocean — it re-derives, from the records alone, every invariant a live Memory (0005) enforces, so an ocean hydrated from an external snapshot can be trusted before the lenses read it. Findings carry a fix. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — a clean ocean is SOUND; a corrupted snapshot is caught</h2>
+<pre id="live"></pre>
+<div class="note">Structure only: a well-formed ocean can still be wrong — truth and soundness are the Reasoner's domain (0028). Integrity promises well-formedness, and says so.</div>
+
+<script src="verify-engine.js"></script>
+<script src="memory.js"></script>
+<script src="integrity.js"></script>
+<script>
+"use strict";
+var I = OceanicCore.createIntegrity;
+
+// a record with sane defaults; override any field
+function rec(o){
+  var base = { id: "x", at: 1, type: "observation", body: "b", source: null, confidence: "medium", meta: null, supersedes: null };
+  Object.keys(o || {}).forEach(function(k){ base[k] = o[k]; });
+  return base;
+}
+// an Integrity over a stub ocean of exactly these records (as a bad snapshot might hold)
+function ocean(records){ return I({ memory: { timeline: function(){ return records; } } }); }
+function chk(rep, id){ return rep.checks.filter(function(c){ return c.id === id; })[0]; }
+
+var suite = OceanicCore.createVerifier({ name: "Integrity (build 0081)" });
+
+suite.test("factory needs a memory with timeline()", function(a){
+  a.equal(typeof I, "function");
+  a.throws(function(){ I(); }, "no memory refused");
+  a.throws(function(){ I({ memory: {} }); }, "an object without timeline refused");
+  var g = I({ memory: { timeline: function(){ return []; } } });
+  a.equal(typeof g.audit, "function"); a.equal(typeof g.ok, "function");
+  var rep = g.audit();
+  a.equal(rep.posture, "sound", "an empty ocean is trivially sound");
+  a.equal(g.ok(), true);
+});
+
+suite.test("a clean, live Memory audits SOUND — every structural check passes", function(a){
+  var m = OceanicCore.createMemory();
+  var A = m.remember({ body: "the tide turned at six", type: "observation" });
+  var B = m.amend(A.id, { body: "the tide turned at seven", type: "observation" });
+  m.remember({ body: "a separate fact", confidence: "high" });
+  var g = OceanicCore.createIntegrity({ memory: m });
+  var rep = g.audit();
+  a.equal(rep.findings.length, 0, "no findings");
+  a.equal(rep.posture, "sound");
+  a.equal(g.ok(), true);
+  a.ok(/^SOUND/.test(rep.headline), "the headline says SOUND");
+  a.equal(rep.records, 3);
+});
+
+suite.test("duplicate ids are caught (high) — a later record would shadow an earlier one", function(a){
+  var rep = ocean([rec({ id: "a" }), rec({ id: "b" }), rec({ id: "a" })]).audit();
+  var f = chk(rep, "INTEG-ID");
+  a.equal(f.verdict, "finding"); a.equal(f.severity, "high");
+  a.ok(f.offenders.indexOf("a") >= 0, "it names the duplicate");
+  a.ok(f.fix.length > 0, "and carries a fix");
+});
+
+suite.test("a supersedes edge to a missing record is caught (high)", function(a){
+  var rep = ocean([rec({ id: "child", supersedes: "ghost" })]).audit();
+  a.equal(chk(rep, "INTEG-SUPERSEDES-EXISTS").verdict, "finding");
+  a.equal(chk(rep, "INTEG-SUPERSEDES-EXISTS").severity, "high");
+});
+
+suite.test("a record superseded TWICE is caught (Memory's 1:1 rule) — the lineage would fork", function(a){
+  var rep = ocean([rec({ id: "a" }), rec({ id: "b", supersedes: "a" }), rec({ id: "c", supersedes: "a" })]).audit();
+  var f = chk(rep, "INTEG-SUPERSEDES-ONCE");
+  a.equal(f.verdict, "finding"); a.equal(f.severity, "high");
+  a.ok(f.offenders.indexOf("a") >= 0, "it names the twice-superseded record");
+});
+
+suite.test("a self-supersede is caught (high)", function(a){
+  var rep = ocean([rec({ id: "a", supersedes: "a" })]).audit();
+  a.equal(chk(rep, "INTEG-SELF").verdict, "finding");
+});
+
+suite.test("a supersession cycle is caught — a lineage that never reaches an origin", function(a){
+  var rep = ocean([rec({ id: "a", supersedes: "b" }), rec({ id: "b", supersedes: "a" })]).audit();
+  var f = chk(rep, "INTEG-NO-CYCLE");
+  a.equal(f.verdict, "finding"); a.equal(f.severity, "high");
+});
+
+suite.test("an empty body is caught (medium) — a record that says nothing", function(a){
+  var rep = ocean([rec({ id: "a", body: "" })]).audit();
+  var f = chk(rep, "INTEG-BODY");
+  a.equal(f.verdict, "finding"); a.equal(f.severity, "medium");
+});
+
+suite.test("an out-of-range confidence is caught (medium)", function(a){
+  var rep = ocean([rec({ id: "a", confidence: "pretty-sure" })]).audit();
+  var f = chk(rep, "INTEG-CONFIDENCE");
+  a.equal(f.verdict, "finding"); a.equal(f.severity, "medium");
+  // a valid confidence passes
+  a.equal(chk(ocean([rec({ id: "a", confidence: "speculation" })]).audit(), "INTEG-CONFIDENCE").verdict, "pass");
+});
+
+suite.test("posture and score reflect the worst breach; ok() agrees", function(a){
+  var corrupt = ocean([rec({ id: "a" }), rec({ id: "a" })]);          // a high breach
+  a.equal(corrupt.audit().posture, "corrupt");
+  a.equal(corrupt.audit().score, 75, "one high finding costs 25");
+  a.equal(corrupt.ok(), false);
+  var flawed = ocean([rec({ id: "a", body: "" })]);                   // only a medium breach
+  a.equal(flawed.audit().posture, "flawed");
+  a.equal(flawed.audit().score, 90, "one medium finding costs 10");
+  a.ok(/CORRUPT/.test(corrupt.audit().headline), "the headline names the posture and the failing checks");
+});
+
+suite.test("Integrity is a PURE READER — auditing never changes the ocean", function(a){
+  var m = OceanicCore.createMemory();
+  var A = m.remember({ body: "v1" }); m.amend(A.id, { body: "v2" });
+  var before = m.timeline().length;
+  var g = OceanicCore.createIntegrity({ memory: m });
+  g.audit(); g.ok(); g.audit();
+  a.equal(m.timeline().length, before, "the record count did not move");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Integrity";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var m = OceanicCore.createMemory();
+  var A = m.remember({ body: "the reef gate opens at high water" });
+  m.amend(A.id, { body: "the reef gate opens at low water" });
+  var clean = OceanicCore.createIntegrity({ memory: m }).audit();
+
+  // a snapshot that got hand-edited: an ancestor id was deleted, leaving a dangling correction
+  var corruptSnapshot = [
+    { id: "s1", at: 1, type: "knowledge", body: "sounding one", confidence: "high", supersedes: null },
+    { id: "s2", at: 2, type: "knowledge", body: "sounding two", confidence: "high", supersedes: "s0-DELETED" }
+  ];
+  var bad = OceanicCore.createIntegrity({ memory: { timeline: function(){ return corruptSnapshot; } } }).audit();
+
+  document.getElementById("live").textContent =
+    "a clean, live ocean:      " + clean.headline + "\n" +
+    "a hand-edited snapshot:   " + bad.headline + "\n" +
+    "  → " + bad.findings.map(function(f){ return f.id + " (" + f.severity + "): " + f.fix; }).join("\n  → ");
+})();
+</script>
+</body>
+</html>
