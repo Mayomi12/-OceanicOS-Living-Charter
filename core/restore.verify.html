@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Restore</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  pre{background:#062033;border:1px solid #12455f;padding:12px;font-size:12px;white-space:pre-wrap;margin-top:12px}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Restore</b> (build 0080, Stage 8 · Stewardship). Undo, the append-only way — it never deletes a mistake; it appends a correction that restores an earlier reading. Composes Memory's amend (0005), Provenance (0075) and Retrospect (0076). Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — a wrong edit, then an honest undo (the mistake still stands)</h2>
+<pre id="live"></pre>
+
+<script src="verify-engine.js"></script>
+<script src="memory.js"></script>
+<script src="provenance.js"></script>
+<script src="retrospect.js"></script>
+<script src="restore.js"></script>
+<script>
+"use strict";
+function rig(){
+  var clock = 0, n = 0;
+  var m = OceanicCore.createMemory({ now: function(){ return clock; }, idgen: function(){ n += 1; return "r" + n; } });
+  var prov = OceanicCore.createProvenance({ memory: m });
+  var retro = OceanicCore.createRetrospect({ memory: m });
+  var restore = OceanicCore.createRestore({ memory: m, provenance: prov, retrospect: retro });
+  return { m: m, prov: prov, retro: retro, restore: restore,
+    remember: function(t, body){ clock = t; return m.remember({ body: body, type: "knowledge" }); },
+    amend: function(t, id, body){ clock = t; return m.amend(id, { body: body, type: "knowledge" }); } };
+}
+
+var suite = OceanicCore.createVerifier({ name: "Restore (build 0080)" });
+
+suite.test("factory needs Memory, Provenance and Retrospect", function(a){
+  a.equal(typeof OceanicCore.createRestore, "function");
+  a.throws(function(){ OceanicCore.createRestore(); }, "no memory refused");
+  a.throws(function(){ OceanicCore.createRestore({ memory: rig().m }); }, "no provenance refused");
+  a.throws(function(){ OceanicCore.createRestore({ memory: rig().m, provenance: rig().prov }); }, "no retrospect refused");
+  var r = rig().restore;
+  ["undo","revertTo","preview"].forEach(function(fn){ a.equal(typeof r[fn], "function", "exposes " + fn); });
+});
+
+suite.test("undo appends a correction restoring the previous version — the mistake is NOT erased", function(a){
+  var g = rig();
+  var A = g.remember(10, "the gate opens at high water");
+  var B = g.amend(20, A.id, "the gate opens at LOW water");   // the wrong edit
+  var before = g.m.timeline().length;
+  var out = g.restore.undo(A.id);
+  a.equal(out.ok, true);
+  a.equal(out.record.body, "the gate opens at high water", "restored the earlier reading");
+  a.equal(out.restoredFrom, A.id);
+  a.equal(out.supersededTip, B.id, "it superseded the current (wrong) tip");
+  a.equal(g.m.timeline().length, before + 1, "append-only: the ocean grew by exactly one");
+  a.equal(g.m.get(B.id).body, "the gate opens at LOW water", "the mistake still stands on the record");
+  a.equal(g.prov.currentOf(A.id).body, "the gate opens at high water", "current now reads the restored value");
+  a.equal(g.prov.currentOf(A.id).source, "restore", "and the restore is recorded as such");
+  a.deepEqual(g.prov.chain(A.id).map(function(r){ return r.id; }).length, 3, "the lineage is 3 deep — nothing lost");
+});
+
+suite.test("undo of an undo reverts the undo (honest single-step semantics)", function(a){
+  var g = rig();
+  var A = g.remember(10, "v1"); g.amend(20, A.id, "v2");
+  var u1 = g.restore.undo(A.id);   // restores v1
+  a.equal(u1.record.body, "v1");
+  var u2 = g.restore.undo(A.id);   // the last change was 'restore v1' over v2 → undo restores v2
+  a.equal(u2.record.body, "v2", "undoing the undo brings v2 back");
+  a.equal(g.prov.chain(A.id).length, 4, "each step appends; nothing is rewound in place");
+});
+
+suite.test("undo with only an origin is refused, not forced", function(a){
+  var g = rig();
+  var A = g.remember(10, "alone");
+  var out = g.restore.undo(A.id);
+  a.equal(out.ok, false);
+  a.ok(/nothing to undo/.test(out.reason), "it says why");
+  a.equal(g.m.timeline().length, 1, "and appends nothing");
+});
+
+suite.test("revertTo restores what the lineage read as of a moment — later history stays", function(a){
+  var g = rig();
+  var A = g.remember(10, "v1"); var B = g.amend(20, A.id, "v2"); var C = g.amend(30, B.id, "v3");
+  var out = g.restore.revertTo(A.id, 15);
+  a.equal(out.ok, true);
+  a.equal(out.record.body, "v1", "restored the as-of-15 reading");
+  a.equal(out.restoredFrom, A.id);
+  a.equal(g.prov.currentOf(A.id).body, "v1", "current reads v1 again");
+  a.equal(g.m.get(C.id).body, "v3", "v3 was not erased");
+  a.equal(g.retro.stateOf(A.id, 25).id, B.id, "as of 25 the ocean still reads v2 — the past is intact");
+  a.equal(g.prov.chain(A.id).length, 4, "the revert is the 4th record in the lineage");
+});
+
+suite.test("revertTo refuses a no-op and an un-begun moment", function(a){
+  var g = rig();
+  var A = g.remember(10, "v1"); g.amend(20, A.id, "v2");
+  var noop = g.restore.revertTo(A.id, 1e9);   // as of now already reads current
+  a.equal(noop.ok, false);
+  a.ok(/nothing to restore/.test(noop.reason), "no-op is refused");
+  var before = g.restore.revertTo(A.id, 5);   // before the lineage began
+  a.equal(before.ok, false);
+  a.ok(/not.*begun|nothing to restore/.test(before.reason), "an un-begun moment is refused");
+  a.equal(g.m.timeline().length, 2, "neither refusal appended anything");
+});
+
+suite.test("preview shows what revertTo WOULD do, writing nothing", function(a){
+  var g = rig();
+  var A = g.remember(10, "v1"); g.amend(20, A.id, "v2");
+  var len = g.m.timeline().length;
+  var p = g.restore.preview(A.id, 15);
+  a.equal(p.ok, true);
+  a.equal(p.current, "v2");
+  a.equal(p.wouldRestore, "v1");
+  a.equal(p.noop, false);
+  a.equal(g.m.timeline().length, len, "preview appended nothing");
+  var pnow = g.restore.preview(A.id, 1e9);
+  a.equal(pnow.noop, true, "previewing the current moment is flagged a no-op");
+});
+
+suite.test("timestamps must be numeric; unknown ids are refused", function(a){
+  var g = rig();
+  var A = g.remember(10, "v1");
+  a.throws(function(){ g.restore.revertTo(A.id, "noon"); }, "revertTo wants a number");
+  a.throws(function(){ g.restore.preview(A.id, "noon"); }, "preview wants a number");
+  a.equal(g.restore.undo("nope").ok, false, "undo of unknown id refused");
+  a.equal(g.restore.revertTo("nope", 10).ok, false, "revertTo of unknown id refused");
+});
+
+suite.test("Restore only ever WRITES corrections — it never deletes", function(a){
+  var g = rig();
+  var A = g.remember(10, "v1"); g.amend(20, A.id, "v2"); g.amend(30, g.prov.currentOf(A.id).id, "v3");
+  var idsBefore = g.m.timeline().map(function(r){ return r.id; });
+  g.restore.undo(A.id); g.restore.revertTo(A.id, 25);
+  var idsAfter = g.m.timeline().map(function(r){ return r.id; });
+  idsBefore.forEach(function(id){ a.ok(idsAfter.indexOf(id) >= 0, id + " still present — nothing removed"); });
+  a.equal(idsAfter.length, idsBefore.length + 2, "only appends: exactly two new records");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Restore";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var g = rig();
+  var A = g.remember(100, "the channel is 4 metres deep");
+  g.amend(200, A.id, "the channel is 14 metres deep");   // a fat-fingered edit
+  var out = g.restore.undo(A.id);
+  document.getElementById("live").textContent =
+    "origin (t=100):   \"" + g.m.get(A.id).body + "\"   [still on the record]\n" +
+    "wrong edit:       \"the channel is 14 metres deep\"   [still on the record — not erased]\n" +
+    "undo appended:    \"" + out.record.body + "\"   (" + out.record.id + ", source=" + out.record.source + ")\n" +
+    "current reads:    \"" + g.prov.currentOf(A.id).body + "\"\n" +
+    "lineage length:   " + g.prov.chain(A.id).length + " (origin → wrong → restore) — the mistake is remembered, and corrected.";
+})();
+</script>
+</body>
+</html>
