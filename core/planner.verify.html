@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Planning</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Planning</b> (build 0031, Stage 4 · Intelligence). Dependency-aware plans: acyclic, deterministically ordered, grounded in verified reality, frontier ranked by the Possibility Engine. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+<div class="note">The Planning application itself is <a href="planner.html" style="color:#38bdf8">planner.html</a> — this page verifies its logic.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="planner.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newWorld(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "planner-test" });
+  return { os: os, p: OceanicCore.createPlanner({ oceanic: os, now: clock }) };
+}
+function chain(p){  // a → b → c ; d independent
+  return p.compose("test voyage", [
+    { id: "a", title: "A" },
+    { id: "b", title: "B", needs: ["a"] },
+    { id: "c", title: "C", needs: ["b"] },
+    { id: "d", title: "D" }
+  ]).plan;
+}
+
+var suite = OceanicCore.createVerifier({ name: "Planning (build 0031)" });
+
+suite.test("createPlanner requires an assembled system and its dependencies", function(a){
+  a.equal(typeof OceanicCore.createPlanner, "function");
+  a.throws(function(){ OceanicCore.createPlanner(); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createPlanner({ oceanic: OceanicCore.createOceanic({ manual:true }), deps: {} }); }, "empty deps");
+  var w = newWorld();
+  ["boot","compose","order","next","complete","progress","plan","plans","status"].forEach(function(fn){
+    a.equal(typeof w.p[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("a fresh planner is quiet; boot() boots once and is idempotent", function(a){
+  var w = newWorld();
+  a.equal(w.p.status().booted, false);
+  a.equal(w.p.status().plans, 0);
+  w.p.boot(); w.p.boot();
+  a.equal(w.os.status().pulse, 1, "one pulse only");
+});
+
+suite.test("compose() validates — and refuses without throwing", function(a){
+  var w = newWorld(); w.p.boot();
+  a.equal(w.p.compose("", [{ id:"a" }]).ok, false, "no goal");
+  a.equal(w.p.compose("goal", []).ok, false, "no steps");
+  a.equal(w.p.compose("goal", [{ title:"nameless" }]).ok, false, "missing id");
+  a.equal(w.p.compose("goal", [{ id:"a" }, { id:"a" }]).ok, false, "duplicate ids");
+  var unknown = w.p.compose("goal", [{ id:"a", needs:["ghost"] }]);
+  a.equal(unknown.ok, false);
+  a.ok(unknown.error.indexOf("ghost") >= 0, "the unknown dependency is named");
+  var good = w.p.compose("goal", [{ id:"a" }, { id:"b", needs:["a"] }]);
+  a.equal(good.ok, true);
+  a.equal(good.plan.steps.length, 2);
+});
+
+suite.test("a cyclic plan is refused and the cycle is spelled out", function(a){
+  var w = newWorld(); w.p.boot();
+  var r = w.p.compose("impossible", [
+    { id: "a", needs: ["c"] },
+    { id: "b", needs: ["a"] },
+    { id: "c", needs: ["b"] }
+  ]);
+  a.equal(r.ok, false);
+  a.ok(r.error.indexOf("cycle") >= 0);
+  a.ok(r.error.indexOf("→") >= 0, "the cycle is drawn");
+  ["a","b","c"].forEach(function(id){ a.ok(r.error.indexOf(id) >= 0, "names " + id); });
+  a.equal(w.p.plans().length, 0, "nothing was stored");
+});
+
+suite.test("order() is topological and deterministic", function(a){
+  var w = newWorld(); w.p.boot();
+  var plan = w.p.compose("build", [
+    { id: "roof",  needs: ["walls"] },
+    { id: "walls", needs: ["base"] },
+    { id: "base" },
+    { id: "door",  needs: ["walls"] }
+  ]).plan;
+  var o = w.p.order(plan.pid);
+  a.deepEqual(o, ["base","walls","roof","door"], "topological; declaration order breaks the roof/door tie");
+  a.deepEqual(w.p.order(plan.pid), o, "and stable across calls");
+  a.deepEqual(w.p.order("ghost"), []);
+});
+
+suite.test("next() is the frontier: unmet needs exclude a step; completing admits its dependents", function(a){
+  var w = newWorld(); w.p.boot();
+  var plan = chain(w.p);
+  var ids = function(){ return w.p.next(plan.pid).map(function(s){ return s.id; }).sort(); };
+  a.deepEqual(ids(), ["a","d"], "only the unblocked steps");
+  w.p.complete(plan.pid, "a");
+  a.deepEqual(ids(), ["b","d"], "completing a admitted b");
+});
+
+suite.test("the Possibility Engine: the frontier ranks by how many futures a step opens", function(a){
+  var w = newWorld(); w.p.boot();
+  var plan = w.p.compose("open the most currents", [
+    { id: "seed",  title: "Seed" },                      // opens sprout, branch, fruit = 3
+    { id: "stone", title: "Stone" },                     // opens 0
+    { id: "sprout", needs: ["seed"] },
+    { id: "branch", needs: ["sprout"] },
+    { id: "fruit",  needs: ["branch"] }
+  ]).plan;
+  var f = w.p.next(plan.pid);
+  a.equal(f[0].id, "seed", "the smallest drop that opens the most future currents ranks first");
+  a.equal(f[0].opens, 3, "the count is transitive and exact");
+  a.equal(f[1].id, "stone");
+  a.equal(f[1].opens, 0);
+});
+
+suite.test("honest progress: refusals name the reason; no skipping; progress is exact", function(a){
+  var w = newWorld(); w.p.boot();
+  var plan = chain(w.p);
+  var r = w.p.complete(plan.pid, "c");
+  a.equal(r.ok, false);
+  a.ok(r.error.indexOf("b") >= 0, "the unmet step is named");
+  a.equal(w.p.complete(plan.pid, "ghost").ok, false);
+  a.equal(w.p.complete("ghost", "a").ok, false);
+  a.equal(w.p.progress(plan.pid).percent, 0);
+  w.p.complete(plan.pid, "a");
+  a.equal(w.p.complete(plan.pid, "a").ok, false, "already complete is refused");
+  w.p.complete(plan.pid, "b");
+  w.p.complete(plan.pid, "c");
+  w.p.complete(plan.pid, "d");
+  var pr = w.p.progress(plan.pid);
+  a.equal(pr.done, 4); a.equal(pr.percent, 100); a.equal(pr.complete, true);
+  a.deepEqual(w.p.next(plan.pid), [], "a finished plan has no frontier");
+});
+
+suite.test("grounded steps wait for verified reality — and admission is automatic on verify", function(a){
+  var w = newWorld(); w.p.boot();
+  var oid = w.os.reality.observe({ observation: "the strait is free of ice", source: "t" }).meta.oid;
+  var plan = w.p.compose("passage", [
+    { id: "sail", title: "Sail", grounds: [oid] }
+  ]).plan;
+  a.deepEqual(w.p.next(plan.pid), [], "a pending ground keeps the step off the frontier");
+  var r = w.p.complete(plan.pid, "sail");
+  a.equal(r.ok, false);
+  a.ok(r.error.indexOf(oid) >= 0, "the unverified ground is named");
+  a.ok(r.error.indexOf("unverified reality") >= 0);
+  w.os.reality.verify(oid, "the pilot confirms");
+  a.equal(w.p.next(plan.pid).length, 1, "verification admitted the step — no manual refresh");
+  a.equal(w.p.complete(plan.pid, "sail").ok, true, "verification before action, then action");
+});
+
+suite.test("plans are independent and listed", function(a){
+  var w = newWorld(); w.p.boot();
+  var p1 = chain(w.p);
+  var p2 = w.p.compose("second voyage", [{ id: "x" }]).plan;
+  w.p.complete(p1.pid, "a");
+  a.equal(w.p.progress(p1.pid).done, 1);
+  a.equal(w.p.progress(p2.pid).done, 0, "untouched");
+  a.equal(w.p.plans().length, 2);
+  a.deepEqual(w.p.plans().map(function(p){ return p.pid; }), [p1.pid, p2.pid]);
+});
+
+suite.test("planning writes NOTHING to the ocean; returned structures are copies; status() consistent", function(a){
+  var w = newWorld(); w.p.boot();
+  var oid = w.os.reality.observe({ observation: "counted water", source: "t" }).meta.oid;
+  var before = w.os.status().memory.count;
+  var snapBefore = w.os.exportSnapshot();
+  var plan = w.p.compose("quiet plan", [{ id: "a" }, { id: "b", needs: ["a"], grounds: [oid] }]).plan;
+  w.p.next(plan.pid); w.p.order(plan.pid); w.p.complete(plan.pid, "a"); w.p.progress(plan.pid); w.p.plans();
+  a.equal(w.os.status().memory.count, before, "record count unchanged");
+  a.equal(w.os.exportSnapshot(), snapBefore, "the ocean is byte-identical");
+  var shaped = w.p.plan(plan.pid);
+  shaped.steps.push({ forged: true }); shaped.steps[0].done = false; shaped.goal = "hacked";
+  a.equal(w.p.plan(plan.pid).steps.length, 2, "the forgery bounced");
+  a.equal(w.p.plan(plan.pid).steps[0].done, true, "the mutation bounced");
+  a.equal(w.p.plan(plan.pid).goal, "quiet plan");
+  var s = w.p.status();
+  a.equal(s.plans, 1); a.equal(s.steps, 2); a.equal(s.done, 1);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Planning";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>

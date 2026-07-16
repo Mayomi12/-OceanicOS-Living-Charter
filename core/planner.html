@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ω∞ OceanicOS — Planning</title>
+<style>
+  :root{ --bg:#04141f; --panel:#061a26; --line:#12455f; --ink:#e8f6fb; --dim:#8fb3c4;
+         --ok:#34d399; --info:#38bdf8; --warn:#fbbf24; --err:#fb7185; }
+  *{box-sizing:border-box}
+  body{font-family:Consolas,ui-monospace,monospace;background:var(--bg);color:var(--ink);margin:0;line-height:1.55}
+  header{padding:16px 22px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between}
+  header h1{font-size:17px;margin:0}
+  header .v{color:var(--dim);font-size:12px}
+  main{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:18px 22px;max-width:1100px;margin:auto}
+  @media(max-width:800px){ main{grid-template-columns:1fr} }
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .card h2{font-size:12px;margin:0 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+  #bar{height:10px;background:var(--bg);border:1px solid var(--line);border-radius:5px;overflow:hidden;margin-bottom:12px}
+  #fill{height:100%;background:var(--ok);width:0%;transition:width .3s}
+  .step{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:9px 12px;margin-bottom:8px;font-size:12px}
+  .step .t{font-size:13px}
+  .step .why{color:var(--dim);font-size:11px;margin-top:3px}
+  .st{float:right;font-size:10px;border-radius:8px;padding:1px 8px;font-weight:bold;text-transform:uppercase}
+  .st-done{background:var(--ok);color:var(--bg)}
+  .st-ready{background:var(--info);color:var(--bg)}
+  .st-blocked-by-deps{background:#0c2c3d;color:var(--warn)}
+  .st-blocked-by-reality{background:var(--err);color:var(--bg)}
+  .front{border-color:var(--info)}
+  button{font-family:inherit;font-size:11px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 12px;cursor:pointer;margin-top:6px}
+  button:hover{border-color:var(--info)}
+  .empty{color:var(--dim);font-style:italic;font-size:12px}
+  footer{color:var(--dim);font-size:12px;padding:14px 22px;border-top:1px solid var(--line);text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>Ω♾️V :: ƆCEANiC_OS — Planning</h1>
+  <div class="v"><span id="stats">–</span></div>
+</header>
+<main>
+  <section class="card">
+    <h2>The plan — <span id="goal" style="color:var(--ink)"></span></h2>
+    <div id="bar"><div id="fill"></div></div>
+    <div id="steps"></div>
+  </section>
+  <section class="card">
+    <h2>The frontier — ranked by the Possibility Engine (what opens the most futures)</h2>
+    <div id="frontier"></div>
+    <h2 style="margin-top:16px">Reality this plan waits on</h2>
+    <div id="reality"></div>
+  </section>
+</main>
+<footer>Only a frontier step may complete; a step citing reality waits for verification. Planning writes nothing to the ocean. — zero-runtime.</footer>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="planner.js"></script>
+<script>
+"use strict";
+var os = OceanicCore.createOceanic({ manual: true, name: "planner" });
+var planner = OceanicCore.createPlanner({ oceanic: os });
+planner.boot();
+
+var iceObs = os.reality.observe({ observation: "the strait is reported free of ice", source: "planner" });
+var voyage = planner.compose("Sail the winter passage", [
+  { id: "charts",    title: "Update the charts" },
+  { id: "crew",      title: "Muster the crew" },
+  { id: "provision", title: "Provision the ship",            needs: ["crew"] },
+  { id: "rig",       title: "Inspect the rigging",           needs: ["crew"] },
+  { id: "route",     title: "Plot the route",                needs: ["charts"] },
+  { id: "clearance", title: "Confirm the strait is passable", needs: ["route"], grounds: [iceObs.meta.oid] },
+  { id: "depart",    title: "Depart on the tide",            needs: ["provision", "rig", "clearance"] }
+]).plan;
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function paint(){
+  var p = planner.plan(voyage.pid);
+  document.getElementById("goal").textContent = p.goal;
+  document.getElementById("stats").textContent = p.progress.done + "/" + p.progress.total + " steps · " + p.progress.percent + "% · ocean " + os.status().memory.count;
+  document.getElementById("fill").style.width = p.progress.percent + "%";
+
+  document.getElementById("steps").innerHTML = p.steps.map(function(s){
+    var why = "";
+    if (s.state === "blocked-by-deps") why = "waits on: " + s.unmet.join(", ");
+    if (s.state === "blocked-by-reality") why = "waits on unverified reality: " + s.unverified.join(", ");
+    return '<div class="step"><span class="st st-'+s.state+'">'+s.state.replace(/-/g," ")+'</span>'+
+           '<div class="t">'+esc(s.title)+'</div>'+(why?'<div class="why">'+esc(why)+"</div>":"")+"</div>";
+  }).join("");
+
+  var frontier = planner.next(voyage.pid);
+  var fb = document.getElementById("frontier");
+  if (!frontier.length) fb.innerHTML = '<div class="empty">' + (p.progress.complete ? "The plan is complete. 💧" : "Nothing is ready — the plan waits on reality.") + "</div>";
+  else fb.innerHTML = frontier.map(function(f){
+    return '<div class="step front"><div class="t">'+esc(f.title)+'</div>'+
+           '<div class="why">opens '+f.opens+' future step'+(f.opens===1?"":"s")+'</div>'+
+           '<button data-id="'+esc(f.id)+'">✓ Complete</button></div>';
+  }).join("");
+
+  var rb = document.getElementById("reality");
+  var waiting = [];
+  p.steps.forEach(function(s){ s.unverified.forEach(function(u){ if(waiting.indexOf(u)<0) waiting.push(u); }); });
+  if (!waiting.length) rb.innerHTML = '<div class="empty">Nothing — all cited reality is verified.</div>';
+  else rb.innerHTML = waiting.map(function(id){
+    return '<div class="step"><div class="t">'+esc(id)+'</div><button data-verify="'+esc(id)+'">Verify observation</button></div>';
+  }).join("");
+}
+
+document.getElementById("frontier").addEventListener("click", function(e){
+  var id = e.target.getAttribute && e.target.getAttribute("data-id");
+  if (id) { planner.complete(voyage.pid, id); paint(); }
+});
+document.getElementById("reality").addEventListener("click", function(e){
+  var id = e.target.getAttribute && e.target.getAttribute("data-verify");
+  if (id) { os.reality.verify(id, "confirmed from the planning table"); paint(); }
+});
+
+paint();
+</script>
+</body>
+</html>
