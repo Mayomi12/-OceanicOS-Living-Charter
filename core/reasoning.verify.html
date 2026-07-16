@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Reasoning</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Reasoning</b> (build 0030, Stage 4 · Intelligence). Auditable conclusions: named rules, cited premises, and confidence never stronger than the weakest premise. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+<div class="note">The Reasoning application itself is <a href="reasoning.html" style="color:#38bdf8">reasoning.html</a> — this page verifies its logic.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="reasoning.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newWorld(){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "reasoning-test" });
+  return { os: os, r: OceanicCore.createReasoning({ oceanic: os, now: clock }) };
+}
+function verifiedObs(os, text, confidence){
+  var o = os.reality.observe({ observation: text, confidence: confidence, source: "t" });
+  os.reality.verify(o.meta.oid, "t");
+  return o.meta.oid;
+}
+
+var suite = OceanicCore.createVerifier({ name: "Reasoning (build 0030)" });
+
+suite.test("createReasoning requires an assembled system and its dependencies", function(a){
+  a.equal(typeof OceanicCore.createReasoning, "function");
+  a.throws(function(){ OceanicCore.createReasoning(); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createReasoning({ oceanic: OceanicCore.createOceanic({ manual:true }), deps: {} }); }, "empty deps");
+  var w = newWorld();
+  ["boot","rules","analyze","findings","about","confidence","status"].forEach(function(fn){
+    a.equal(typeof w.r[fn], "function", "exposes " + fn);
+  });
+});
+
+suite.test("a fresh engine is quiet; boot() boots once and is idempotent", function(a){
+  var w = newWorld();
+  a.equal(w.r.status().booted, false);
+  a.equal(w.r.status().findings, 0);
+  w.r.boot(); w.r.boot();
+  a.equal(w.os.status().pulse, 1, "one pulse only");
+});
+
+suite.test("rules() self-describes exactly the five named rules", function(a){
+  var w = newWorld();
+  var rules = w.r.rules();
+  a.equal(rules.length, 5);
+  a.deepEqual(rules.map(function(r){ return r.name; }),
+    ["well-grounded","eroded-ground","ready-to-decide","blocked-decision","unsupported-knowledge"]);
+  rules.forEach(function(r){ a.ok(r.summary && r.summary.length > 20, r.name + " states what it does"); });
+});
+
+suite.test("well-grounded fires with exact premises; confidence is the MIN of the premises'", function(a){
+  var w = newWorld(); w.r.boot();
+  var o1 = verifiedObs(w.os, "pilot confirms", "high");
+  var o2 = verifiedObs(w.os, "gauge agrees", "medium");
+  var kid = w.os.knowledge.learn({ statement: "the tide is rising", topics: ["tides"], grounds: [o1, o2], source: "t" }).meta.kid;
+  var f = w.r.findings("well-grounded");
+  a.equal(f.length, 1);
+  a.equal(f[0].subject.id, kid);
+  a.deepEqual(f[0].premises.slice().sort(), [o1, o2].sort(), "the premises are exactly the grounds");
+  a.equal(f[0].confidence, "medium", "high + medium derives medium — the weakest premise rules");
+});
+
+suite.test("the humility law: a speculation ground caps the conclusion at speculation", function(a){
+  var w = newWorld(); w.r.boot();
+  var strong = verifiedObs(w.os, "captain swears it", "certain");
+  var weak = verifiedObs(w.os, "a deckhand thinks so", "speculation");
+  w.os.knowledge.learn({ statement: "krakens frequent the bay", topics: ["fauna"], grounds: [strong, weak], source: "t" });
+  a.equal(w.r.findings("well-grounded")[0].confidence, "speculation", "never stronger than the weakest premise");
+  a.equal(w.r.confidence(["certain","high","low"]), "low", "the helper states the same law");
+  a.equal(w.r.confidence(["certain"]), "certain");
+  a.equal(w.r.scale[0], "speculation", "the shared scale, weakest first");
+});
+
+suite.test("eroded-ground: archiving a ground flags the knowledge that rested on it", function(a){
+  var w = newWorld(); w.r.boot();
+  var oid = verifiedObs(w.os, "the beacon is dark", "high");
+  var kid = w.os.knowledge.learn({ statement: "the beacon has failed", topics: ["beacons"], grounds: [oid], source: "t" }).meta.kid;
+  a.equal(w.r.findings("well-grounded").length, 1, "healthy before the erosion");
+  w.os.reality.archive(oid, "beacon repaired");
+  var f = w.r.findings("eroded-ground");
+  a.equal(f.length, 1);
+  a.equal(f[0].subject.id, kid);
+  a.deepEqual(f[0].premises, [oid], "the finding names the eroded ground");
+  a.equal(w.r.findings("well-grounded").length, 0, "and the well-grounded finding is gone");
+});
+
+suite.test("blocked-decision flips to ready-to-decide when reality is verified — with no manual re-analyze", function(a){
+  var w = newWorld(); w.r.boot();
+  var o = w.os.reality.observe({ observation: "ice in the strait", confidence: "high", source: "t" });
+  var did = w.os.decisions.propose({ question: "close the strait?", options: ["yes","no"], grounds: [o.meta.oid], source: "t" }).meta.did;
+  var blocked = w.r.findings("blocked-decision");
+  a.equal(blocked.length, 1);
+  a.equal(blocked[0].subject.id, did);
+  a.deepEqual(blocked[0].premises, [o.meta.oid], "the premises name exactly what blocks it");
+  a.equal(w.r.findings("ready-to-decide").length, 0);
+  w.os.reality.verify(o.meta.oid, "confirmed");
+  a.equal(w.r.findings("blocked-decision").length, 0, "freshness is decidable — the block dissolved");
+  var ready = w.r.findings("ready-to-decide");
+  a.equal(ready.length, 1);
+  a.equal(ready[0].confidence, "high", "ready carries the grounds' confidence");
+});
+
+suite.test("unsupported-knowledge: external-only provenance is flagged; grounded knowledge is not", function(a){
+  var w = newWorld(); w.r.boot();
+  var oid = verifiedObs(w.os, "soundings on file", "high");
+  w.os.knowledge.learn({ statement: "the channel is deep", topics: ["channel"], grounds: [oid], source: "t" });
+  var kid = w.os.knowledge.learn({ statement: "old charts say the reef moved", topics: ["reefs"], grounds: ["Almanac, 4th ed."], source: "t" }).meta.kid;
+  var f = w.r.findings("unsupported-knowledge");
+  a.equal(f.length, 1);
+  a.equal(f[0].subject.id, kid);
+  a.deepEqual(f[0].premises, [], "nothing of this ocean to cite");
+  a.ok(f[0].conclusion.indexOf("evidence before assumption") >= 0);
+});
+
+suite.test("every finding is grounded in real records; about() and the rule filter work", function(a){
+  var w = newWorld(); w.r.boot();
+  var oid = verifiedObs(w.os, "tide confirmed", "high");
+  var kid = w.os.knowledge.learn({ statement: "tides rise", topics: ["tides"], grounds: [oid], source: "t" }).meta.kid;
+  w.os.decisions.propose({ question: "sail?", options: ["yes","no"], grounds: [oid], source: "t" });
+  var ids = {};
+  w.os.reality.observations(false).forEach(function(r){ ids[r.meta.oid] = 1; });
+  w.os.knowledge.knowledge(false).forEach(function(r){ ids[r.meta.kid] = 1; });
+  w.os.decisions.decisions(false).forEach(function(r){ ids[r.meta.did] = 1; });
+  w.r.findings().forEach(function(f){
+    a.ok(ids[f.subject.id], f.rule + " subject is a real record");
+    f.premises.forEach(function(p){ a.ok(ids[p], f.rule + " premise " + p + " is a real record"); });
+  });
+  a.equal(w.r.about(oid).length, 2, "the observation grounds a knowledge and a decision finding");
+  a.equal(w.r.about(kid).length, 1);
+  a.equal(w.r.about("ghost").length, 0);
+});
+
+suite.test("no rule invents: a healthy ocean yields only the exact positive findings", function(a){
+  var w = newWorld(); w.r.boot();
+  var oid = verifiedObs(w.os, "all is well", "certain");
+  w.os.knowledge.learn({ statement: "the water is calm", topics: ["water"], grounds: [oid], source: "t" });
+  var did = w.os.decisions.propose({ question: "rest?", options: ["yes","no"], grounds: [oid], source: "t" }).meta.did;
+  w.os.decisions.decide(did, "yes", "earned");
+  var all = w.r.findings();
+  a.equal(all.length, 1, "one finding only");
+  a.equal(all[0].rule, "well-grounded", "a decided decision raises nothing; healthy knowledge is simply supported");
+  a.equal(all[0].confidence, "certain");
+});
+
+suite.test("analyze() writes NOTHING; findings() returns copies; status() is consistent", function(a){
+  var w = newWorld(); w.r.boot();
+  var oid = verifiedObs(w.os, "counted water", "high");
+  w.os.knowledge.learn({ statement: "water counts", topics: ["water"], grounds: [oid], source: "t" });
+  var before = w.os.status().memory.count;
+  var snapBefore = w.os.exportSnapshot();
+  w.r.analyze(); w.r.findings(); w.r.about(oid); w.r.rules();
+  a.equal(w.os.status().memory.count, before, "record count unchanged");
+  a.equal(w.os.exportSnapshot(), snapBefore, "the ocean is byte-identical");
+  var f = w.r.findings(); f.push({ forged: true }); if (f[0]) f[0].confidence = "certain-er";
+  a.equal(w.r.findings().length, 1, "the forgery bounced");
+  a.equal(w.r.findings()[0].confidence, "high", "the mutation bounced");
+  var s = w.r.status();
+  a.equal(s.findings, 1);
+  a.equal(s.rules, 5);
+  a.equal(s.oceanAt, w.os.status().memory.count);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Reasoning";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>

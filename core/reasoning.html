@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ω∞ OceanicOS — Reasoning</title>
+<style>
+  :root{ --bg:#04141f; --panel:#061a26; --line:#12455f; --ink:#e8f6fb; --dim:#8fb3c4;
+         --ok:#34d399; --info:#38bdf8; --warn:#fbbf24; --err:#fb7185; --violet:#a78bfa; }
+  *{box-sizing:border-box}
+  body{font-family:Consolas,ui-monospace,monospace;background:var(--bg);color:var(--ink);margin:0;line-height:1.55}
+  header{padding:16px 22px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between}
+  header h1{font-size:17px;margin:0}
+  header .v{color:var(--dim);font-size:12px}
+  main{display:grid;grid-template-columns:2fr 1fr;gap:18px;padding:18px 22px;max-width:1100px;margin:auto}
+  @media(max-width:800px){ main{grid-template-columns:1fr} }
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .card h2{font-size:12px;margin:0 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+  .rulehead{font-size:12px;color:var(--info);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.05em}
+  .finding{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:8px}
+  .finding .subj{font-size:13px}
+  .finding .subj .id{color:var(--info);font-size:11px}
+  .finding .conc{color:var(--dim);font-size:12px;margin-top:3px}
+  .finding .prem{font-size:11px;color:var(--dim);margin-top:5px}
+  .finding .prem code{color:var(--warn)}
+  .chip{float:right;font-size:10px;border-radius:8px;padding:1px 8px;font-weight:bold;text-transform:uppercase}
+  .c-certain{background:var(--ok);color:var(--bg)} .c-high{background:#22d3ee;color:var(--bg)}
+  .c-medium{background:var(--warn);color:var(--bg)} .c-low{background:#fb923c;color:var(--bg)}
+  .c-speculation{background:var(--err);color:var(--bg)}
+  .rule{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:11px}
+  .rule b{color:var(--info)}
+  .empty{color:var(--dim);font-style:italic;font-size:12px}
+  button{font-family:inherit;font-size:11px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 14px;cursor:pointer}
+  button:hover{border-color:var(--info)}
+  footer{color:var(--dim);font-size:12px;padding:14px 22px;border-top:1px solid var(--line);text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>Ω♾️V :: ƆCEANiC_OS — Reasoning</h1>
+  <div class="v"><span id="stats">–</span> <button id="seed">Seed a world</button></div>
+</header>
+<main>
+  <section class="card">
+    <h2>Findings — every conclusion carries its rule, premises, and confidence</h2>
+    <div id="findings"><div class="empty">The ocean is empty. Seed a world to reason about.</div></div>
+  </section>
+  <section class="card">
+    <h2>The rules — reasoning states its own logic</h2>
+    <div id="rules"></div>
+    <h2 style="margin-top:16px">The humility law</h2>
+    <div class="rule">A derived confidence is the <b>minimum</b> of its premises' confidences on the shared scale <b>certain · high · medium · low · speculation</b>. A conclusion is never more certain than its weakest evidence.</div>
+  </section>
+</main>
+<footer>Findings are proposals — the human decides. Reasoning writes nothing to the ocean. — zero-runtime, in your browser.</footer>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="reasoning.js"></script>
+<script>
+"use strict";
+var os = OceanicCore.createOceanic({ manual: true, name: "reasoning" });
+var reason = OceanicCore.createReasoning({ oceanic: os });
+reason.boot();
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function paintRules(){
+  document.getElementById("rules").innerHTML = reason.rules().map(function(r){
+    return '<div class="rule"><b>'+esc(r.name)+'</b> — '+esc(r.summary)+"</div>";
+  }).join("");
+}
+
+function paint(){
+  var r = reason.analyze();
+  document.getElementById("stats").textContent = r.findings.length + " findings · " + reason.rules().length + " rules · ocean " + os.status().memory.count;
+  var box = document.getElementById("findings");
+  if (!r.findings.length) { box.innerHTML = '<div class="empty">No findings — the ocean is empty or perfectly quiet.</div>'; return; }
+  var byRule = {};
+  r.findings.forEach(function(f){ (byRule[f.rule] = byRule[f.rule] || []).push(f); });
+  var html = "";
+  reason.rules().forEach(function(rule){
+    var list = byRule[rule.name];
+    if (!list) return;
+    html += '<div class="rulehead">'+esc(rule.name)+" ("+list.length+")</div>";
+    list.forEach(function(f){
+      html += '<div class="finding"><span class="chip c-'+esc(f.confidence)+'">'+esc(f.confidence)+'</span>'+
+        '<div class="subj">'+esc(f.subject.label)+' <span class="id">'+esc(f.subject.id)+" · "+esc(f.subject.type)+'</span></div>'+
+        '<div class="conc">'+esc(f.conclusion)+"</div>"+
+        (f.premises.length ? '<div class="prem">premises: '+f.premises.map(function(p){ return "<code>"+esc(p)+"</code>"; }).join(" ")+"</div>" : "")+
+        "</div>";
+    });
+  });
+  box.innerHTML = html;
+}
+
+document.getElementById("seed").addEventListener("click", function(){
+  // a world that fires all five rules
+  var strong = os.reality.observe({ observation: "the pilot confirms the rising tide", confidence: "high", source: "seed" });
+  os.reality.verify(strong.meta.oid, "logged");
+  var weak = os.reality.observe({ observation: "a deckhand thinks he saw a kraken", confidence: "speculation", source: "seed" });
+  os.reality.verify(weak.meta.oid, "he did say it");
+  os.knowledge.learn({ statement: "the tide is rising", topics: ["tides"], grounds: [strong.meta.oid], source: "seed" });          // well-grounded (high)
+  os.knowledge.learn({ statement: "krakens frequent this bay", topics: ["fauna"], grounds: [weak.meta.oid], source: "seed" });     // well-grounded (speculation!)
+  os.knowledge.learn({ statement: "old charts say the reef moved", topics: ["reefs"], grounds: ["Almanac 4th ed."], source: "seed" }); // unsupported
+  var eroding = os.reality.observe({ observation: "the beacon is dark", source: "seed" });
+  os.reality.verify(eroding.meta.oid);
+  os.knowledge.learn({ statement: "the beacon has failed", topics: ["beacons"], grounds: [eroding.meta.oid], source: "seed" });
+  os.reality.archive(eroding.meta.oid, "beacon repaired — observation archived");                                                  // eroded-ground
+  var pend = os.reality.observe({ observation: "ice reported in the strait", source: "seed" });
+  os.decisions.propose({ question: "close the strait?", options: ["yes","no"], grounds: [pend.meta.oid], source: "seed" });        // blocked-decision
+  os.decisions.propose({ question: "reroute the ferry?", options: ["yes","no"], grounds: [strong.meta.oid], source: "seed" });     // ready-to-decide
+  paint();
+});
+
+paintRules();
+paint();
+</script>
+</body>
+</html>
