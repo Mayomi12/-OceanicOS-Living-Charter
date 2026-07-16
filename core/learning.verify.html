@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Learning</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:880px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .verdict{margin-top:16px;font-size:15px;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Learning</b> (build 0032, Stage 4 · Intelligence). Trust earned from verified evidence by a stated formula; staleness measured in ocean growth; gaps surfaced; proposals only. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+<div class="note">The Learning application itself is <a href="learning.html" style="color:#38bdf8">learning.html</a> — this page verifies its logic.</div>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="learning.js"></script>
+<script>
+"use strict";
+var clock = (function(){ var t=1000; return function(){ return (t+=10); }; })();
+function newWorld(staleAfter){
+  var os = OceanicCore.createOceanic({ now: clock, manual: true, name: "learning-test" });
+  return { os: os, l: OceanicCore.createLearning({ oceanic: os, now: clock, staleAfter: staleAfter || 3 }) };
+}
+function vobs(os, text, conf){
+  var o = os.reality.observe({ observation: text, confidence: conf, source: "t" });
+  os.reality.verify(o.meta.oid, "t");
+  return o.meta.oid;
+}
+
+var suite = OceanicCore.createVerifier({ name: "Learning (build 0032)" });
+
+suite.test("createLearning requires an assembled system and its dependencies", function(a){
+  a.equal(typeof OceanicCore.createLearning, "function");
+  a.throws(function(){ OceanicCore.createLearning(); }, "no oceanic");
+  a.throws(function(){ OceanicCore.createLearning({ oceanic: OceanicCore.createOceanic({ manual:true }), deps: {} }); }, "empty deps");
+  var w = newWorld();
+  ["boot","trust","report","gaps","suggestions","status"].forEach(function(fn){
+    a.equal(typeof w.l[fn], "function", "exposes " + fn);
+  });
+  a.ok(typeof w.l.basis === "string" && w.l.basis.length > 40, "the trust formula is stated");
+});
+
+suite.test("a fresh engine is quiet; boot() boots once and is idempotent", function(a){
+  var w = newWorld();
+  a.equal(w.l.status().booted, false);
+  w.l.boot(); w.l.boot();
+  a.equal(w.os.status().pulse, 1, "one pulse only");
+  a.deepEqual(w.l.report(), []);
+});
+
+suite.test("trust is the stated formula: verified grounds contribute their confidence rank", function(a){
+  var w = newWorld(); w.l.boot();
+  var hi = vobs(w.os, "pilot logs it", "high");        // 4
+  var med = vobs(w.os, "gauge confirms", "medium");    // 3
+  var kid = w.os.knowledge.learn({ statement: "the tide is rising", topics: ["tides"], grounds: [hi, med], source: "t" }).meta.kid;
+  var t = w.l.trust(kid);
+  a.equal(t.score, 7, "high(4) + medium(3)");
+  a.equal(t.band, "strong");
+  a.equal(t.evidence.length, 2);
+  var byId = {}; t.evidence.forEach(function(e){ byId[e.id] = e; });
+  a.equal(byId[hi].weight, 4);
+  a.equal(byId[med].weight, 3);
+  a.ok(t.basis.indexOf("speculation=1") >= 0, "the basis states the weights");
+});
+
+suite.test("pending and external grounds weigh 0; external-only knowledge is untrusted", function(a){
+  var w = newWorld(); w.l.boot();
+  var kid = w.os.knowledge.learn({ statement: "old charts say the reef moved", topics: ["reefs"], grounds: ["Almanac, 4th ed."], source: "t" }).meta.kid;
+  var t = w.l.trust(kid);
+  a.equal(t.score, 0);
+  a.equal(t.band, "untrusted");
+  a.equal(t.evidence[0].status, "external");
+  a.equal(t.evidence[0].weight, 0);
+  a.equal(w.l.trust("ghost").band, "untrusted", "unknown kid reported, never thrown");
+});
+
+suite.test("band boundaries are exact: 0 untrusted · 1-2 low · 3-5 growing · 6+ strong", function(a){
+  var w = newWorld(); w.l.boot();
+  var spec = vobs(w.os, "a whisper", "speculation");                 // 1
+  var low  = vobs(w.os, "a rumor with legs", "low");                 // 2
+  var med  = vobs(w.os, "a solid reading", "medium");                // 3
+  var k1 = w.os.knowledge.learn({ statement: "k1", grounds: [spec], source: "t" }).meta.kid;               // 1 → low
+  var k2 = w.os.knowledge.learn({ statement: "k2", grounds: [low], source: "t" }).meta.kid;                // 2 → low
+  var k3 = w.os.knowledge.learn({ statement: "k3", grounds: [med], source: "t" }).meta.kid;                // 3 → growing
+  var k4 = w.os.knowledge.learn({ statement: "k4", grounds: [spec, low, med], source: "t" }).meta.kid;     // 6 → strong
+  a.equal(w.l.trust(k1).band, "low");
+  a.equal(w.l.trust(k2).band, "low");
+  a.equal(w.l.trust(k3).band, "growing");
+  a.equal(w.l.trust(k4).score, 6);
+  a.equal(w.l.trust(k4).band, "strong");
+});
+
+suite.test("staleness is measured in ocean growth; a revision resets the clock", function(a){
+  var w = newWorld(3); w.l.boot();
+  var g = vobs(w.os, "ground truth", "medium");
+  var kid = w.os.knowledge.learn({ statement: "v1 of the idea", grounds: [g], source: "t" }).meta.kid;
+  w.l.report();                                    // stamp the fingerprint now
+  a.equal(w.l.report()[0].stale, false, "fresh at birth");
+  for (var i = 0; i < 3; i++) w.os.reality.observe({ observation: "unrelated " + i, source: "t" });
+  var row = w.l.report()[0];
+  a.equal(row.stale, true, "the ocean grew past staleAfter");
+  a.equal(row.age, 3, "age is exact, in records");
+  w.os.knowledge.revise(kid, { statement: "v2 — deepened" });
+  row = w.l.report()[0];
+  a.equal(row.stale, false, "a revision resets the clock");
+  a.equal(row.age, 0);
+});
+
+suite.test("gaps(): verified evidence cited by nothing is surfaced; citing it removes it; pending never appears", function(a){
+  var w = newWorld(); w.l.boot();
+  var lonely = vobs(w.os, "driftwood piles on the west shore", "medium");
+  w.os.reality.observe({ observation: "unverified murmur", source: "t" });
+  var g = w.l.gaps();
+  a.equal(g.length, 1);
+  a.equal(g[0].id, lonely);
+  a.ok(g[0].note.indexOf("never learned") >= 0);
+  w.os.knowledge.learn({ statement: "the west shore collects driftwood", grounds: [lonely], source: "t" });
+  a.equal(w.l.gaps().length, 0, "cited evidence is no longer a gap");
+});
+
+suite.test("suggestions: eroded ground → re-examine; stale below strong → revisit; strong+fresh → none", function(a){
+  var w = newWorld(3); w.l.boot();
+  var d = vobs(w.os, "the beacon is dark", "high");
+  var kid = w.os.knowledge.learn({ statement: "the beacon has failed", grounds: [d], source: "t" }).meta.kid;
+  w.l.report();
+  w.os.reality.archive(d, "beacon repaired");
+  var row = w.l.report()[0];
+  a.equal(row.suggestions.length >= 1, true);
+  a.ok(row.suggestions[0].indexOf(d) >= 0, "the eroded ground is named");
+  a.ok(row.suggestions[0].indexOf("deprecat") >= 0, "deprecation is proposed, not performed");
+  // stale + low
+  var spec = vobs(w.os, "a whisper", "speculation");
+  var k2 = w.os.knowledge.learn({ statement: "whisper wisdom", grounds: [spec], source: "t" }).meta.kid;
+  w.l.report();
+  for (var i = 0; i < 3; i++) w.os.reality.observe({ observation: "noise " + i, source: "t" });
+  var rows = w.l.report();
+  var r2 = rows.filter(function(r){ return r.id === k2; })[0];
+  a.ok(r2.suggestions.join(" ").indexOf("Never stagnate") >= 0, "the stale low-trust knowledge is told to revisit");
+  // strong + fresh
+  var s1 = vobs(w.os, "sworn statement", "certain");
+  var s2 = vobs(w.os, "second witness", "certain");
+  var k3 = w.os.knowledge.learn({ statement: "well attested", grounds: [s1, s2], source: "t" }).meta.kid;
+  var r3 = w.l.report().filter(function(r){ return r.id === k3; })[0];
+  a.deepEqual(r3.suggestions, [], "strong and fresh needs nothing");
+  a.equal(r3.band, "strong");
+});
+
+suite.test("report() covers every established knowledge and excludes the deprecated", function(a){
+  var w = newWorld(); w.l.boot();
+  var g = vobs(w.os, "solid ground", "high");
+  w.os.knowledge.learn({ statement: "keeper", grounds: [g], source: "t" });
+  var dead = w.os.knowledge.learn({ statement: "goner", grounds: [g], source: "t" }).meta.kid;
+  w.os.knowledge.deprecate(dead, "superseded");
+  var rows = w.l.report();
+  a.equal(rows.length, 1);
+  a.equal(rows[0].statement, "keeper");
+});
+
+suite.test("decidable freshness: an eroding ground lowers the trust with no manual refresh", function(a){
+  var w = newWorld(); w.l.boot();
+  var solid = vobs(w.os, "already confirmed", "low");
+  var strong = vobs(w.os, "the pilot's sworn log", "high");
+  var kid = w.os.knowledge.learn({ statement: "part-proven idea", grounds: [solid, strong], source: "t" }).meta.kid;
+  a.equal(w.l.trust(kid).score, 6, "low(2) + high(4)");
+  a.equal(w.l.trust(kid).band, "strong");
+  w.os.reality.archive(strong, "log withdrawn");
+  a.equal(w.l.trust(kid).score, 2, "the archived ground weighs 0 immediately — no manual refresh");
+  a.equal(w.l.trust(kid).band, "low", "the band fell with the evidence");
+});
+
+suite.test("learning writes NOTHING; returned structures are copies; status() consistent", function(a){
+  var w = newWorld(3); w.l.boot();
+  var g = vobs(w.os, "counted water", "high");
+  w.os.knowledge.learn({ statement: "water counts", grounds: [g], source: "t" });
+  var before = w.os.status().memory.count;
+  var snapBefore = w.os.exportSnapshot();
+  w.l.report(); w.l.trust(w.l.report()[0].id); w.l.gaps(); w.l.suggestions();
+  a.equal(w.os.status().memory.count, before, "record count unchanged");
+  a.equal(w.os.exportSnapshot(), snapBefore, "the ocean is byte-identical");
+  var r = w.l.report(); r.push({ forged: true }); r[0].trust = 999;
+  a.equal(w.l.report().length, 1, "the forgery bounced");
+  a.equal(w.l.report()[0].trust, 4, "the mutation bounced");
+  var s = w.l.status();
+  a.equal(s.knowledge, 1);
+  a.equal(s.staleAfter, 3);
+  a.equal(s.oceanAt, w.os.status().memory.count);
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Learning";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+</script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ω∞ OceanicOS — Learning</title>
+<style>
+  :root{ --bg:#04141f; --panel:#061a26; --line:#12455f; --ink:#e8f6fb; --dim:#8fb3c4;
+         --ok:#34d399; --info:#38bdf8; --warn:#fbbf24; --err:#fb7185; }
+  *{box-sizing:border-box}
+  body{font-family:Consolas,ui-monospace,monospace;background:var(--bg);color:var(--ink);margin:0;line-height:1.55}
+  header{padding:16px 22px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between}
+  header h1{font-size:17px;margin:0}
+  header .v{color:var(--dim);font-size:12px}
+  main{display:grid;grid-template-columns:3fr 2fr;gap:18px;padding:18px 22px;max-width:1100px;margin:auto}
+  @media(max-width:820px){ main{grid-template-columns:1fr} }
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .card h2{font-size:12px;margin:0 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+  .k{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px;font-size:12px}
+  .k .st{font-size:13px}
+  .k .meta{color:var(--dim);font-size:11px;margin-top:2px}
+  .bar{height:8px;background:#0c2c3d;border-radius:4px;margin-top:8px;overflow:hidden}
+  .bar div{height:100%}
+  .chip{float:right;font-size:10px;border-radius:8px;padding:1px 8px;font-weight:bold;text-transform:uppercase;margin-left:6px}
+  .b-strong{background:var(--ok);color:var(--bg)} .b-growing{background:var(--info);color:var(--bg)}
+  .b-low{background:var(--warn);color:var(--bg)} .b-untrusted{background:var(--err);color:var(--bg)}
+  .stale{background:#0c2c3d;color:var(--warn)}
+  .sug{color:var(--warn);font-size:11px;margin-top:6px}
+  .gap{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:11px}
+  .gap b{color:var(--info)}
+  .empty{color:var(--dim);font-style:italic;font-size:12px}
+  .formula{color:var(--dim);font-size:11px;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+  button{font-family:inherit;font-size:11px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 14px;cursor:pointer}
+  button:hover{border-color:var(--info)}
+  footer{color:var(--dim);font-size:12px;padding:14px 22px;border-top:1px solid var(--line);text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>Ω♾️V :: ƆCEANiC_OS — Learning</h1>
+  <div class="v"><span id="stats">–</span> <button id="seed">Seed a history</button></div>
+</header>
+<main>
+  <section class="card">
+    <h2>Knowledge report — trust earned from verified evidence</h2>
+    <div id="report"><div class="empty">Nothing learned yet. Seed a history.</div></div>
+  </section>
+  <section class="card">
+    <h2>Gaps — observed, never learned</h2>
+    <div id="gaps"></div>
+    <h2 style="margin-top:16px">The trust formula (stated by the engine)</h2>
+    <div class="formula" id="basis"></div>
+  </section>
+</main>
+<footer>Learning proposes; the human decides. Nothing here writes to the ocean. — zero-runtime, in your browser.</footer>
+
+<script src="verify-engine.js"></script>
+<script src="heartbeat.js"></script>
+<script src="memory.js"></script>
+<script src="reality-engine.js"></script>
+<script src="decision-engine.js"></script>
+<script src="knowledge-engine.js"></script>
+<script src="projects-engine.js"></script>
+<script src="build-registry.js"></script>
+<script src="oceanic.js"></script>
+<script src="logger.js"></script>
+<script src="learning.js"></script>
+<script>
+"use strict";
+var os = OceanicCore.createOceanic({ manual: true, name: "learning" });
+var learning = OceanicCore.createLearning({ oceanic: os, staleAfter: 6 });
+learning.boot();
+document.getElementById("basis").textContent = learning.basis;
+
+var BANDMAX = 8;
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function barColor(b){ return { strong:"#34d399", growing:"#38bdf8", low:"#fbbf24", untrusted:"#fb7185" }[b]; }
+
+function paint(){
+  var rows = learning.report();
+  var s = learning.status();
+  document.getElementById("stats").textContent = s.knowledge + " knowledge · " + s.stale + " stale · " + s.suggestions + " suggestions · ocean " + os.status().memory.count;
+  var box = document.getElementById("report");
+  if (!rows.length) { box.innerHTML = '<div class="empty">Nothing learned yet. Seed a history.</div>'; }
+  else box.innerHTML = rows.map(function(r){
+    var pct = Math.min(100, Math.round(100 * r.trust / BANDMAX));
+    return '<div class="k">'+
+      '<span class="chip b-'+r.band+'">'+r.band+" · "+r.trust+'</span>'+
+      (r.stale ? '<span class="chip stale">stale · age '+r.age+"</span>" : "")+
+      '<div class="st">'+esc(r.statement)+'</div>'+
+      '<div class="meta">'+esc(r.id)+" · evidence: "+r.evidence.map(function(e){ return e.id+" ("+(e.weight||0)+")"; }).join(", ")+"</div>"+
+      '<div class="bar"><div style="width:'+pct+'%;background:'+barColor(r.band)+'"></div></div>'+
+      r.suggestions.map(function(su){ return '<div class="sug">→ '+esc(su)+"</div>"; }).join("")+
+      "</div>";
+  }).join("");
+
+  var gaps = learning.gaps();
+  document.getElementById("gaps").innerHTML = gaps.length
+    ? gaps.map(function(g){ return '<div class="gap"><b>'+esc(g.id)+"</b> — "+esc(g.observation)+'<br><span style="color:var(--dim)">'+esc(g.note)+"</span></div>"; }).join("")
+    : '<div class="empty">No unharvested evidence — everything verified is synthesized.</div>';
+}
+
+document.getElementById("seed").addEventListener("click", function(){
+  function vobs(text, conf){ var o = os.reality.observe({ observation: text, confidence: conf, source: "seed" }); os.reality.verify(o.meta.oid, "seed"); return o.meta.oid; }
+  // strong: two solid verified grounds
+  var a = vobs("the pilot logs the rising tide", "high");
+  var b = vobs("the gauge confirms the rise", "medium");
+  os.knowledge.learn({ statement: "the tide is rising", topics: ["tides"], grounds: [a, b], source: "seed" });
+  // low: one speculative ground
+  var c = vobs("a deckhand thinks he saw a kraken", "speculation");
+  os.knowledge.learn({ statement: "krakens frequent this bay", topics: ["fauna"], grounds: [c], source: "seed" });
+  // untrusted: external provenance only
+  os.knowledge.learn({ statement: "old charts say the reef moved", topics: ["reefs"], grounds: ["Almanac 4th ed."], source: "seed" });
+  // eroded: learned on a verified ground that is later archived
+  var d = vobs("the beacon is dark", "high");
+  os.knowledge.learn({ statement: "the beacon has failed", topics: ["beacons"], grounds: [d], source: "seed" });
+  learning.report();   // stamp fingerprints now
+  os.reality.archive(d, "beacon repaired");
+  // an unharvested verified observation — a gap
+  vobs("driftwood piles up on the west shore", "medium");
+  // grow the ocean so the untouched knowledge goes stale
+  for (var i = 0; i < 6; i++) os.reality.observe({ observation: "routine sounding " + (i+1), source: "seed" });
+  paint();
+});
+
+paint();
+</script>
+</body>
+</html>
