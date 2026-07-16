@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ω∞ Core Verification — Special Tokens</title>
+<style>
+  body{font-family:Consolas,monospace;background:#04141f;color:#e8f6fb;padding:30px;max-width:900px;margin:auto}
+  h1{font-size:18px} h2{font-size:15px;margin-top:30px;color:#8fb3c4} .sub{color:#8fb3c4;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin-top:14px}
+  td,th{border:1px solid #12455f;padding:8px 12px;font-size:13px;text-align:left}
+  .pass{color:#34d399;font-weight:bold} .fail{color:#fb7185;font-weight:bold}
+  .note{color:#8fb3c4;font-size:12px;margin-top:8px;font-style:italic}
+  .chips span{display:inline-block;margin:2px;padding:3px 7px;border:1px solid #12455f;border-radius:4px;font-size:12px}
+  .chips .b{background:#0a2a3f} .chips .s{background:#3a2a12;border-color:#fbbf24;color:#fbbf24}
+</style>
+</head>
+<body>
+<h1>Ω∞ OceanicOS :: Core Verification</h1>
+<div class="sub">Capability under test: <b>Special Tokens</b> (build 0079, Stage 7 · Ecosystem). minbpe's third piece — reserved whole-string tokens (`&lt;|endoftext|&gt;`) that bypass BPE, composed as a <b>wrapper</b> over the Basic (0068) or Regex (0073) tokenizer. Closes the stated "no special tokens" limit. Suite runs on the <b>Verification Engine</b> (0004).</div>
+<div id="suite"></div>
+
+<h2>Live proof — a document boundary is ONE token, not byte soup</h2>
+<div id="live" class="chips"></div>
+<div id="liveline" class="note"></div>
+
+<script src="verify-engine.js"></script>
+<script src="tokenizer.js"></script>
+<script src="tokenizer-regex.js"></script>
+<script src="special-tokens.js"></script>
+<script>
+"use strict";
+var S = OceanicCore.createSpecialTokenizer;
+
+function trainedBasic(){ var t = OceanicCore.createTokenizer(); t.train("the tide turns and the tide returns and the tide teaches the tide", 300); return t; }
+function trainedRegex(){ var t = OceanicCore.createRegexTokenizer(); t.train("the tide turns and the tide returns and the tide teaches the tide", 300); return t; }
+var EOT = "<|endoftext|>", FIM = "<|fim|>";
+
+var suite = OceanicCore.createVerifier({ name: "Special Tokens (build 0079)" });
+
+suite.test("factory needs a trained base tokenizer; ids must sit ABOVE the base vocab; no collisions", function(a){
+  a.equal(typeof S, "function");
+  a.throws(function(){ S(); }, "no base refused");
+  a.throws(function(){ S({ base: {} }); }, "a non-tokenizer base refused");
+  var b = trainedBasic();
+  a.throws(function(){ S({ base: b, specials: { "<|x|>": 10 } }); }, "an id inside the base vocab is refused (collision)");
+  a.throws(function(){ S({ base: b, specials: { "<|x|>": 300.5 } }); }, "a fractional id is refused");
+  a.throws(function(){ S({ base: b, specials: { "<|a|>": 500, "<|b|>": 500 } }); }, "two specials sharing an id is refused");
+  var sp = S({ base: b, specials: {} });
+  ["encode","decode","tokenOf","specials","specialIds","vocabSize"].forEach(function(fn){ a.equal(typeof sp[fn], "function", "exposes " + fn); });
+});
+
+suite.test("with NO specials it is exactly the base tokenizer", function(a){
+  var b = trainedBasic();
+  var sp = S({ base: b, specials: {} });
+  var text = "the tide teaches";
+  a.deepEqual(sp.encode(text), b.encode(text), "encode delegates");
+  a.equal(sp.decode(b.encode(text)), b.decode(b.encode(text)), "decode delegates");
+});
+
+suite.test("a registered special becomes ONE reserved id; the text around it is base-encoded", function(a){
+  var b = trainedBasic();
+  var sp = S({ base: b, specials: { "<|endoftext|>": 400 } });
+  var ids = sp.encode("the tide" + EOT + "teaches");
+  a.equal(ids.indexOf(400) >= 0, true, "the special's reserved id appears");
+  a.equal(ids.filter(function(x){ return x === 400; }).length, 1, "exactly once");
+  // it is NOT the byte soup of '<','|',… : base-encoding the literal would be many tokens, none === 400
+  a.equal(b.encode(EOT).indexOf(400) < 0, true, "the base alone never produces id 400");
+  var eotAt = ids.indexOf(400);
+  a.deepEqual(ids.slice(0, eotAt), b.encode("the tide"), "left run is plain base encoding");
+  a.deepEqual(ids.slice(eotAt + 1), b.encode("teaches"), "right run is plain base encoding");
+});
+
+suite.test("decode ∘ encode is IDENTITY across specials, adjacency, and unicode", function(a){
+  var b = trainedBasic();
+  var sp = S({ base: b, specials: { "<|endoftext|>": 400, "<|fim|>": 401 } });
+  [ "plain, no specials",
+    "the tide" + EOT + "teaches the tide",
+    EOT + "leading special",
+    "trailing special" + EOT,
+    EOT + EOT + "back to back",
+    "doc one" + EOT + "doc two 🌊 прилив" + FIM + "insert",
+    ""
+  ].forEach(function(s){
+    a.equal(sp.decode(sp.encode(s)), s, JSON.stringify(s.slice(0, 24)) + " round-trips exactly");
+  });
+});
+
+suite.test("allowed:'none' encodes the special string as ORDINARY text (minbpe's control)", function(a){
+  var b = trainedBasic();
+  var sp = S({ base: b, specials: { "<|endoftext|>": 400 } });
+  var raw = "a" + EOT + "b";
+  a.equal(sp.encode(raw, { allowed: "none" }).indexOf(400) < 0, true, "the reserved id is NOT emitted");
+  a.deepEqual(sp.encode(raw, { allowed: "none" }), b.encode(raw), "it is exactly the base encoding of the literal");
+  a.equal(sp.decode(sp.encode(raw, { allowed: "none" })), raw, "and still round-trips");
+});
+
+suite.test("allowed:[subset] treats only the listed specials as special", function(a){
+  var b = trainedBasic();
+  var sp = S({ base: b, specials: { "<|endoftext|>": 400, "<|fim|>": 401 } });
+  var ids = sp.encode("x" + EOT + "y" + FIM + "z", { allowed: ["<|endoftext|>"] });
+  a.equal(ids.indexOf(400) >= 0, true, "the allowed special IS reserved");
+  a.equal(ids.indexOf(401) < 0, true, "the disallowed special is NOT reserved (encoded as text)");
+  a.throws(function(){ sp.encode("x", { allowed: ["<|nope|>"] }); }, "an unregistered name in allowed is refused");
+  a.throws(function(){ sp.encode("x", { allowed: 7 }); }, "a bad allowed value is refused");
+});
+
+suite.test("longest match wins when one special is a prefix of another", function(a){
+  var b = trainedBasic();
+  var sp = S({ base: b, specials: { "<|end|>": 400, "<|endoftext|>": 401 } });
+  var ids = sp.encode("a<|endoftext|>b");
+  a.equal(ids.indexOf(401) >= 0, true, "the longer '<|endoftext|>' matched");
+  a.equal(ids.indexOf(400) < 0, true, "the shorter '<|end|>' did not steal the prefix");
+});
+
+suite.test("tokenOf and vocabSize account for the specials", function(a){
+  var b = trainedBasic();
+  var sp = S({ base: b, specials: { "<|endoftext|>": 400 } });
+  a.deepEqual(sp.tokenOf(400), { id: 400, special: true, text: EOT }, "a special reports itself");
+  a.equal(sp.tokenOf(97).special, false, "a base token is marked not-special");
+  a.equal(sp.tokenOf(97).text, "a", "and still carries its base text");
+  var v = sp.vocabSize();
+  a.equal(v.base, b.vocabSize());
+  a.equal(v.specials, 1);
+  a.equal(v.size, b.vocabSize() + 1);
+  a.deepEqual(sp.specialIds(), [400]);
+  a.deepEqual(sp.specials(), { "<|endoftext|>": 400 });
+});
+
+suite.test("it composes over the REGEX tokenizer too (build 0073), not just Basic", function(a){
+  var r = trainedRegex();
+  var sp = S({ base: r, specials: { "<|endoftext|>": 400 } });
+  var s = "the tide 🌊 12 times" + EOT + "and again, прилив!";
+  var ids = sp.encode(s);
+  a.equal(ids.filter(function(x){ return x === 400; }).length, 1, "one document boundary token");
+  a.equal(sp.decode(ids), s, "round-trips exactly over the regex base");
+});
+
+suite.test("input guards", function(a){
+  var sp = S({ base: trainedBasic(), specials: { "<|endoftext|>": 400 } });
+  a.throws(function(){ sp.encode(42); }, "encode wants a string");
+  a.throws(function(){ sp.decode("nope"); }, "decode wants an array");
+});
+
+/* ---- render the suite THROUGH the Verification Engine ---- */
+var record = suite.renderTo(document.getElementById("suite"));
+document.title = (record.verdict === "PASS" ? "✅" : "❌") + " Ω∞ Special Tokens";
+try{ if(window.parent && window.parent!==window) window.parent.postMessage({ oceanicVerify:{ name:record.name, verdict:record.verdict, total:record.total, passed:record.passed, failed:record.failed } }, "*"); }catch(e){}
+
+/* ---- live proof ---- */
+(function(){
+  var b = trainedBasic();
+  var sp = S({ base: b, specials: { "<|endoftext|>": 400 } });
+  var sentence = "the tide teaches" + EOT + "the tide returns";
+  var ids = sp.encode(sentence);
+  var live = document.getElementById("live");
+  ids.forEach(function(id){
+    var chip = document.createElement("span");
+    var tk = sp.tokenOf(id);
+    chip.className = tk.special ? "s" : "b";
+    chip.textContent = (tk.special ? tk.text : JSON.stringify(tk.text).slice(1, -1)) + " ·" + id;
+    live.appendChild(chip);
+  });
+  var withoutSpecial = sp.encode(sentence.split("<|endoftext|>").join("")).length;
+  document.getElementById("liveline").textContent =
+    "\"" + sentence + "\" → " + ids.length + " tokens; the boundary <|endoftext|> is the single amber token (id 400), " +
+    "not the " + b.encode("<|endoftext|>").length + " tokens the raw string would otherwise cost. decode(encode(x)) === x: " +
+    (sp.decode(ids) === sentence ? "✓" : "✗");
+})();
+</script>
+</body>
+</html>
